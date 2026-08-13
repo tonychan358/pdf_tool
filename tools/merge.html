@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合併 — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="merge.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="merge.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+    <p class="hint" data-i18n="merge.hint"></p>
+    <ul id="filelist" class="filelist"></ul>
+
+    <label data-i18n="merge.outName"></label>
+    <input type="text" id="outName">
+
+    <button id="run" class="primary" data-i18n="common.run"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
+import { loadPdf, newPdf, copyRange, save, AppError } from '../assets/core/pdf.mjs';
+import { sanitizeFileName } from '../assets/core/naming.mjs';
+import { t } from '../assets/core/i18n.mjs';
+
+const outNameEl = document.getElementById('outName');
+
+await mountTool({
+  dropEl: document.getElementById('drop'),
+  listEl: document.getElementById('filelist'),
+  runBtn: document.getElementById('run'),
+  msgEl:  document.getElementById('msg'),
+  accept: 'pdf', multiple: true, sortable: true,
+  async run(files, ctx) {
+    const out = await newPdf();
+    for (let i = 0; i < files.length; i++) {
+      // 幾個檔案入面邊一個先出事，一定要話俾用戶知——單單話「處理失敗」佢哋
+      // 會唔知去邊個檔案入手，尤其係一次過拖咗好多份入嚟嘅時候。呢個 try 一
+      // 定要連 copyRange／getPageCount 都包埋：試過有啲損壞檔 pdf-lib 喺
+      // loadPdf() 嗰陣唔會拋錯（鬆散咁「讀到」一個殘缺嘅 PDFDocument），到
+      // 真正攞 Pages／複製頁面先爆——如果淨係包 loadPdf，呢種情況會漏網，
+      // 使用者見到嘅就係冇檔名嘅 error.generic。
+      try {
+        const src = await loadPdf(files[i]);
+        await copyRange(src, out, 1, src.getPageCount());
+      } catch (e) {
+        const reason = e instanceof AppError ? t(e.i18nKey, e.vars) : String(e && e.message || e);
+        throw new AppError('error.mergeFileFailed', { name: files[i].name, reason });
+      }
+      ctx.progress(i + 1, files.length);
+      await yieldToUI(); // 逐檔就俾瀏覽器 repaint 一次，進度條先會逐步畫得出（唔係一路凍結到尾先跳去 done）
+    }
+    const raw = outNameEl.value.trim() || t('merge.outNameDefault');
+    const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
+    return [{ name: `${base}.pdf`, bytes: await save(out) }];
+  },
+});
+
+// 預設檔名要跟返介面語言：初次載入用返 mountTool() 入面 initI18n() 揀好嘅
+// 語言；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一次——否則「頁面一
+// 開就切去英文先至開始用」嘅使用者，會見到英文介面卻配一個中文預設檔名
+// 「合併結果.pdf」，同其餘所有文字唔一致。但一旦用戶自己打過檔名，呢個
+// 自動同步就要停手，唔可以蓋走佢哋打緊/打好嘅嘢——用 outNameTouched 記住
+// 「用戶有冇手動改過」。
+// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
+// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
+// 仲未 fetch 完，會讀到舊語言）。
+let outNameTouched = false;
+outNameEl.addEventListener('input', () => { outNameTouched = true; });
+const applyDefaultOutName = () => {
+  if (!outNameTouched) outNameEl.value = `${t('merge.outNameDefault')}.pdf`;
+};
+applyDefaultOutName();
+new MutationObserver(applyDefaultOutName)
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+</script>
+</body>
+</html>

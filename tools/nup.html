@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N-up 拼版 — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="nup.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="nup.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+    <ul id="filelist" class="filelist"></ul>
+
+    <label data-i18n="nup.per"></label>
+    <div class="radio-row">
+      <label><input type="radio" name="per" value="2" checked><span data-i18n="nup.per2"></span></label>
+      <label><input type="radio" name="per" value="4"><span data-i18n="nup.per4"></span></label>
+    </div>
+    <p id="sheetsInfo" class="hint"></p>
+
+    <label data-i18n="nup.gutter"></label>
+    <input type="number" id="gutter" value="10" min="0" step="1">
+    <p class="hint" data-i18n="nup.gutterHint"></p>
+
+    <label data-i18n="nup.outName"></label>
+    <input type="text" id="outName">
+
+    <button id="run" class="primary" data-i18n="common.run"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
+import { loadPdf, newPdf, save } from '../assets/core/pdf.mjs';
+import { nupLayout, A4 } from '../assets/core/paging.mjs';
+import { sanitizeFileName } from '../assets/core/naming.mjs';
+import { t } from '../assets/core/i18n.mjs';
+
+const $ = id => document.getElementById(id);
+const outNameEl = $('outName');
+const sheetsInfoEl = $('sheetsInfo');
+const gutterEl = $('gutter');
+const currentPer = () => Number(document.querySelector('input[name=per]:checked').value);
+
+// 留白上限：per=4 用 A4.W（兩種 per 入面較窄嗰邊）分 2 欄、3 條 gutter，係最快
+// 令 nupLayout() 嘅 cellW 跌到 0 或以下嗰個組合——臨界值 = A4.W / 3 ≈
+// 198.4267pt。呢個上限對 per=2（臨界值較寬鬆，約 280.63pt）一樣安全，所以
+// 揀呢個較緊嘅數做單一、跨兩種 per 都啱用嘅靜態上限，唔使跟住 per 嘅
+// radio 改嚟改去。整數化之後再減 1，一嚟啱好對應 input 嘅 step="1"，二嚟
+// 留返少少浮點誤差緩衝，確保夾喺呢個上限都仍然係一個正嘅、有得畫嘢嘅 cell
+// （而唔係啱啱好貼住 0 嘅臨界點）。
+const MAX_GUTTER = Math.floor(A4.W / 3) - 1; // = 197pt
+gutterEl.max = String(MAX_GUTTER);
+
+// 用戶打嘅留白一旦超出 MAX_GUTTER，就即時夾返落嚟並彈警告——喺度做（用戶
+// 離開個欄嗰刻，即 change 事件），而唔係擺喺 run() 入面先做：mountTool 嘅
+// click handler 喺 run() 完成、deliver() 完成之後一定會執行
+// ctrl.showOk('common.done')，會將 run() 入面設嘅任何訊息（包括呢個警告）
+// 即刻蓋走，用戶淨係會見到「完成」，唔會見到「其實你打嘅數字已經被夾細
+// 咗」。擺喺呢度、喺撳「開始處理」之前就令用戶睇到，先真正符合「唔可以
+// 靜靜雞俾佢哋一個唔係佢哋所要求嘅結果」呢個要求。
+function clampGutterInput() {
+  const raw = Number(gutterEl.value);
+  if (Number.isFinite(raw) && raw > MAX_GUTTER) {
+    gutterEl.value = String(MAX_GUTTER);
+    ctrl.showWarn('nup.gutterClamped', { max: MAX_GUTTER });
+  }
+}
+
+const ctrl = await mountTool({
+  dropEl: $('drop'),
+  listEl: $('filelist'),
+  runBtn: $('run'),
+  msgEl:  $('msg'),
+  accept: 'pdf', multiple: false,
+  async run(files, ctx) {
+    const per = currentPer();
+    // 撳「開始處理」嗰刻先再夾多一次做保底：正常情況下 clampGutterInput() 已經
+    // 喺 change 事件（例如撳呢粒掣之前嘅 blur）度做咗，呢度嘅 Math.min 純粹係
+    // 防禦性網——確保就算個 input 唔知點解仲揸住一個超出 MAX_GUTTER 嘅值（例如
+    // 用戶冇離開過個欄，直接靠 Enter/滑鼠撳掣），nupLayout() 都唔會收到會令
+    // cellW／cellH 跌到 0 或以下嘅 gutter。
+    const gutter = Math.min(Math.max(0, Number($('gutter').value) || 0), MAX_GUTTER);
+
+    const src = await loadPdf(files[0]);
+    const total = src.getPageCount();
+    const out = await newPdf();
+
+    // 逐版處理：一版最多 per 頁。總頁數唔一定係 per 嘅倍數，最後一版可能唔夠
+    // per 頁——indices 就只會有實際存在嘅頁，該版右下（或右方）嘅格自然留空，
+    // 唔使額外判斷，亦唔會報錯。
+    for (let start = 0; start < total; start += per) {
+      const indices = [];
+      for (let k = 0; k < per && start + k < total; k++) indices.push(start + k);
+
+      const embedded = await out.embedPages(indices.map(i => src.getPage(i)));
+      const first = src.getPage(indices[0]);
+      const { width: pw, height: ph } = first.getSize();
+      const layout = nupLayout({ pageW: pw, pageH: ph, per, gutter });
+      const sheet = out.addPage([layout.sheetW, layout.sheetH]);
+
+      embedded.forEach((ep, k) => {
+        // 文件入面頁面尺寸可能唔一致（混合尺寸），所以逐頁按其實際尺寸（ep.width／
+        // ep.height）獨立重算縮放，唔直接沿用 layout.cells[k].scale——嗰個 scale
+        // 係按呢版第一頁（first）算出嚟，套落尺寸唔同嘅頁會變形或者爆格。
+        //
+        // 但呢格喺版面上嘅「位置」仍然可以安全沿用 layout 算出嚟嘅 cell：
+        // cell.w／cell.h 其實係「first 等比縮放後」嘅內容闊高，必然 ≤ 呢格喺
+        // 版面上實際嘅闊高（nupLayout 入面嘅 scale = min(cellW/pageW, cellH/pageH)
+        // 保證咗呢點）。用 cell.w／cell.h 當呢頁嘅「可用空間」計 s，容出嚟嘅
+        // w/h 仍然 ≤ cell.w／cell.h ≤ 呢格嘅真實闊高，所以一定唔會爆格；
+        // 而 cell.x+(cell.w-w)/2 呢條置中公式代入化簡之後，結果同「直接喺呢格
+        // 嘅真實闊度入面置中」完全一樣，同 first 嘅尺寸無關（cell.x 本身已經
+        // 包咗「first 喺真實格入面點置中」嗰部分，兩層相減之後 first 嘅尺寸會
+        // 互相抵消）。所以呢個做法對每一頁都係等比、置中、唔爆格、唔變形。
+        const cell = layout.cells[k];
+        const s = Math.min(cell.w / ep.width, cell.h / ep.height);
+        const w = ep.width * s;
+        const h = ep.height * s;
+        sheet.drawPage(ep, {
+          x: cell.x + (cell.w - w) / 2,
+          y: cell.y + (cell.h - h) / 2,
+          xScale: s, yScale: s,
+        });
+      });
+
+      ctx.progress(Math.min(start + per, total), total);
+      await yieldToUI(); // 逐版就俾瀏覽器 repaint 一次，進度條先會逐步畫得出（唔係一路凍結到尾先跳去 done）
+    }
+
+    const raw = outNameEl.value.trim() || t('nup.outNameDefault');
+    const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
+    return [{ name: `${base}.pdf`, bytes: await save(out) }];
+  },
+});
+
+// 呢個監聽器要喺 ctrl 已經賦值之後先掛（clampGutterInput() 入面用到
+// ctrl.showWarn()）——mountTool() 嗰個 await 期間，用戶理論上都有機會撳嘢，
+// 太早掛就有機會撞落 ctrl 仲喺 TDZ 嘅窗口。
+gutterEl.addEventListener('change', clampGutterInput);
+
+// 「幾多版」預覽：檔案或者「每版頁數」一有變動就即時更新，等使用者未撳
+// 「開始處理」都心裡有數會出幾多版紙。loadPdf 係 async，用戶可能手快換咗
+// 檔案或者撤走檔案，所以要同 split.html／organize.html 一樣用世代計數器
+// 守住：遲到嘅結果唔可以寫返落畫面。
+let previewGeneration = 0;
+async function updateSheetsInfo() {
+  const myGeneration = ++previewGeneration;
+  if (ctrl.files.length === 0) { sheetsInfoEl.textContent = ''; return; }
+  try {
+    const doc = await loadPdf(ctrl.files[0]);
+    if (myGeneration !== previewGeneration) return; // 呢輪讀取已被取代
+    const pages = doc.getPageCount();
+    const sheets = Math.ceil(pages / currentPer());
+    sheetsInfoEl.textContent = t('nup.sheets', { pages, sheets });
+  } catch {
+    if (myGeneration !== previewGeneration) return;
+    sheetsInfoEl.textContent = ''; // 讀唔到就靜靜地唔顯示——真正嘅錯誤訊息留返俾撳「開始處理」嗰刻嘅 mountTool 處理
+  }
+}
+document.querySelectorAll('input[name=per]').forEach(r => r.addEventListener('change', updateSheetsInfo));
+// renderFileList() 每次都會 ul.innerHTML = '' 再重新 append，所以檔案一有
+// 增減（包括拖曳選檔、按「移除」）都必然觸發 childList mutation，呢個
+// observer 一定收得到。
+new MutationObserver(updateSheetsInfo).observe($('filelist'), { childList: true });
+
+// 預設檔名要跟返介面語言，同 merge.html／images-to-pdf.html／interleave.html／
+// organize.html 用同一套做法：初次載入用 mountTool() 入面 initI18n() 揀好嘅
+// 語言即刻填一次；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一次——
+// 否則介面已經切晒去英文，輸出檔名仍然係中文「拼版結果.pdf」，同其餘所有
+// 文字唔一致。但一旦用戶自己打過檔名，呢個自動同步就要停手，唔可以蓋走
+// 佢哋打緊/打好嘅嘢——用 outNameTouched 記住「用戶有冇手動改過」。
+// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
+// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
+// 仲未 fetch 完，會讀到舊語言）。
+let outNameTouched = false;
+outNameEl.addEventListener('input', () => { outNameTouched = true; });
+const applyDefaultOutName = () => {
+  if (!outNameTouched) outNameEl.value = `${t('nup.outNameDefault')}.pdf`;
+};
+applyDefaultOutName();
+// 同一個訊號仲要順手重新畫一次「幾多版」預覽——嗰句係用 t() 現砌嘅純文字，
+// 唔會跟住 <html lang> 自動更新（同 organize.html 嘅 repaint() 一樣道理）。
+// 冇呢步嘅話，用戶已經切咗去英文介面，呢句提示卻仲卡住舊語言，好突兀。
+new MutationObserver(() => { applyDefaultOutName(); updateSheetsInfo(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+</script>
+</body>
+</html>

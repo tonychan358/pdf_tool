@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>頁面編輯 — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="organize.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="organize.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+    <ul id="filelist" class="filelist"></ul>
+    <p class="hint" data-i18n="organize.hint"></p>
+    <div id="thumbs" class="thumbs"></div>
+    <p id="kept" class="hint"></p>
+
+    <label data-i18n="organize.outName"></label>
+    <input type="text" id="outName">
+
+    <button id="run" class="primary" data-i18n="common.run"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { initI18n, t } from '../assets/core/i18n.mjs';
+import { createDropzone, renderFileList } from '../assets/core/dropzone.mjs';
+import { loadPdf, newPdf, save, PDFLib, AppError } from '../assets/core/pdf.mjs';
+import { deliver } from '../assets/core/zip.mjs';
+import { renderThumbs } from '../assets/core/thumbs.mjs';
+import { sanitizeFileName } from '../assets/core/naming.mjs';
+
+const $ = id => document.getElementById(id);
+const msgEl = $('msg');
+const show = (cls, key, vars) => {
+  msgEl.className = `msg ${cls}`;
+  msgEl.textContent = t(key, vars);
+  msgEl.hidden = false;
+};
+const clearMsg = () => { msgEl.hidden = true; };
+
+await initI18n();
+
+let srcDoc = null;
+let state = [];   // [{origIndex, rotate, removed, canvas}]
+
+function repaint() {
+  const box = $('thumbs');
+  box.innerHTML = '';
+  state.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb' + (s.removed ? ' removed' : '');
+    div.draggable = true;
+    div.dataset.index = String(i);
+
+    const no = document.createElement('span');
+    no.className = 'no';
+    no.textContent = String(i + 1);
+
+    // 90°／270° 之後個縮圖嘅視覺外框會由「闊 x 高」變返轉頭「高 x 闊」——canvas
+    // 本身嘅 layout box（用嚟畀 grid 計格仔大細、用嚟畀 CSS transform 揀轉軸
+    // 中心）並唔會因為得個 transform 就自動跟住轉。淨係轉唔改 box 尺寸嘅話，
+    // 轉 90/270 度嘅內容會伸出原本嗰個直度／橫度嘅格仔，俾隔籬格仔或者格仔本身
+    // 嘅邊界剪走一截——呢個先係使用者真正想睇（頁面轉正咗未）嗰刻睇唔到。
+    // 做法：canvas 嘅 intrinsic 像素闊高（width/height 屬性，喺 thumbs.mjs 度
+    // render 嗰陣訂死）比例係固定嘅；轉 90/270 前，將 CSS width 由平時嘅
+    // 100%（貼滿格仔闊度）改做「(intrinsicW/intrinsicH)*100%」，height keep
+    // 住 CSS 入面嘅 auto——噉樣轉 90 度之後個外框啱啱好變返 100% 闊、
+    // (intrinsicH/intrinsicW) 咁多嘅高，同冇轉嗰陣個格仔闊度一致，唔會爆格。
+    // margin 0 auto 等個 canvas 喺 width 縮咗嗰陣仲企中間，唔會偏一邊。
+    const swapped = s.rotate === 90 || s.rotate === 270;
+    const ratio = s.canvas.width / s.canvas.height; // intrinsic 闊/高，同 CSS 顯示大細（可能已經因為之前嘅 rotate 被改過）無關
+    s.canvas.style.width = swapped ? `${(ratio * 100).toFixed(4)}%` : '100%';
+    s.canvas.style.margin = '0 auto';
+    s.canvas.style.transform = `rotate(${s.rotate}deg)`;
+    s.canvas.style.transition = 'transform .15s, width .15s';
+
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    const rot = document.createElement('button');
+    rot.type = 'button'; rot.textContent = '↻'; rot.title = t('organize.rotate');
+    rot.addEventListener('click', e => { e.stopPropagation(); s.rotate = (s.rotate + 90) % 360; repaint(); });
+    const del = document.createElement('button');
+    del.type = 'button'; del.textContent = s.removed ? '↺' : '✕'; del.title = t('organize.toggleDelete');
+    del.addEventListener('click', e => { e.stopPropagation(); s.removed = !s.removed; repaint(); });
+    acts.append(rot, del);
+
+    div.append(no, s.canvas, acts);
+    box.appendChild(div);
+  });
+  $('kept').textContent = state.length === 0 ? '' : t('organize.kept', { n: state.filter(s => !s.removed).length });
+}
+
+let dragFrom = null;
+$('thumbs').addEventListener('dragstart', e => {
+  const d = e.target.closest('.thumb');
+  if (!d) return;
+  dragFrom = Number(d.dataset.index);
+  d.classList.add('dragging');
+});
+$('thumbs').addEventListener('dragend', e => e.target.closest('.thumb')?.classList.remove('dragging'));
+$('thumbs').addEventListener('dragover', e => e.preventDefault());
+$('thumbs').addEventListener('drop', e => {
+  e.preventDefault();
+  const d = e.target.closest('.thumb');
+  if (!d || dragFrom === null) return;
+  const to = Number(d.dataset.index);
+  state.splice(to, 0, state.splice(dragFrom, 1)[0]);
+  dragFrom = null;
+  repaint();
+});
+
+// 世代計數器：見 split.html 同一個守衛的解釋。縮圖渲染係全站最慢嘅操作
+// （逐頁 canvas render，幾十頁可以拖幾秒），呢頁比其他工具更加需要呢層防護——
+// 用戶手快撳走個檔、或者換一份新檔重新拖入，都要令上一輪未完成嘅
+// loadPdf／renderThumbs 完全冇機會寫返落 srcDoc／state／畫面。
+let loadGeneration = 0;
+
+function resetThumbState() {
+  $('thumbs').innerHTML = '';
+  state = [];
+  srcDoc = null;
+  $('kept').textContent = '';
+}
+
+// 「目前選咗邊個檔」嘅唯一事實來源，同 split.html 的 applyFiles 同一個角色：
+// 新增檔案（拖放／選檔）同喺檔案清單度按「移除」都要行呢一條路徑，等
+// srcDoc／state／縮圖格／已保留頁數呢幾樣派生狀態永遠同「畫面上顯示緊嘅
+// 檔案清單」一致——移除檔案唔淨係要清空檔案清單，仲要連帶清埋縮圖同已載入
+// 嘅文件，否則按「開始處理」會用返一個畫面上已經睇唔到嘅舊檔匯出。
+// 「開始處理」喺縮圖未渲染完成之前必須停用：srcDoc 淨係喺 renderThumbs()
+// 成功之後先賦值（見底下），冇呢個 disabled 閘嘅話，用戶啱啱拖完一個大檔、
+// 縮圖仲喺度逐頁渲染緊（可以長達幾秒），畫面已經見到檔案清單同即時進度
+// 數字（organize.rendering），但撳「開始處理」會撞正 `if (!srcDoc)` 分支，
+// 見到一句「請先選擇檔案」——同眼前明明已經揀咗檔、仲有嘢喺度跑緊自相矛盾。
+const runBtn = $('run');
+runBtn.disabled = true;
+
+async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
+  const myGeneration = ++loadGeneration; // 一定要喺任何 await 之前、同步咁攞
+  renderFileList($('filelist'), files, { onChange: f => { dz.setFiles(f); applyFiles(f); } });
+  if (skipped.limit > 0 && files.length > 0) {
+    // 呢個工具都係單檔模式（accept multiple: false），超出上限嘅檔案一定係
+    // 一次過拖咗多過一個入嚟，話俾用戶知邊個先係真正被揀嗰個。
+    show('warn', 'warn.onlyFirstUsed', { name: skipped.keptName });
+  } else if (skipped.type > 0 && files.length > 0) {
+    show('warn', 'warn.filesSkipped', { n: skipped.type });
+  } else {
+    clearMsg();
+  }
+  resetThumbState();
+  runBtn.disabled = true; // 新一輪讀取／縮圖渲染期間都要停用，直至完成先開返
+  if (files.length === 0) return;
+  try {
+    const loaded = await loadPdf(files[0]);
+    if (myGeneration !== loadGeneration) return; // 呢輪讀取已被取代
+    const pending = [];
+    await renderThumbs(
+      files[0],
+      (i, canvas) => pending.push({ origIndex: i, rotate: 0, removed: false, canvas }),
+      (done, total) => { if (myGeneration === loadGeneration) show('ok', 'organize.rendering', { done, total }); }
+    );
+    if (myGeneration !== loadGeneration) return; // 渲染中途已被取代，pending 呢份縮圖唔再寫入任何共用狀態
+    srcDoc = loaded;
+    state = pending;
+    clearMsg();
+    repaint();
+    runBtn.disabled = false; // 縮圖真係整齊晒，先至畀「開始處理」可以撳
+  } catch (e) {
+    if (myGeneration !== loadGeneration) return; // 同上：遲到嘅 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
+    resetThumbState();
+    show('error', e instanceof AppError ? e.i18nKey : 'error.corrupt');
+  }
+}
+
+const dz = createDropzone($('drop'), {
+  accept: 'pdf', multiple: false,
+  onChange: (files, errKey, skipped) => {
+    // 呢個檔案完全冇被接納（例如拖入嘅唔係 PDF），現有已載入文件冇改變，
+    // 唔經 applyFiles，淨係報錯——同 split.html 一致。
+    if (errKey) { show('error', errKey); return; }
+    applyFiles(files, skipped);
+  },
+});
+
+// 預設檔名跟返介面語言，同 merge.html 一致：初次載入用 initI18n() 揀好嘅語言；
+// 之後用戶撳 lang-toggle 切換語言即時跟住換一次；但一旦用戶自己打過檔名，
+// 就唔可以再蓋走佢哋打緊/打好嘅嘢。
+let outNameTouched = false;
+const outNameEl = $('outName');
+outNameEl.addEventListener('input', () => { outNameTouched = true; });
+const applyDefaultOutName = () => {
+  if (!outNameTouched) outNameEl.value = `${t('organize.outNameDefault')}.pdf`;
+};
+applyDefaultOutName();
+// 語言切換同一時間仲要重繪縮圖格：「將輸出 N 頁」嗰句、以及每粒 ↻／✕ 按鈕嘅
+// title 提示，都係喺 repaint() 入面用 t() 現砌，唔會跟住 <html lang> 自動更新。
+// 冇呢步嘅話，用戶切去英文介面後，輸出檔名同標題都變晒英文，但已經有縮圖嘅
+// 頁面卻仲卡住舊語言，畫面會不倫不類。
+new MutationObserver(() => { applyDefaultOutName(); repaint(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+
+$('run').addEventListener('click', async () => {
+  if (!srcDoc) { show('error', 'error.noFile'); return; }
+  const kept = state.filter(s => !s.removed);
+  if (kept.length === 0) { show('error', 'organize.allDeleted'); return; }
+  const btn = $('run');
+  btn.disabled = true;
+  try {
+    const out = await newPdf();
+    const pages = await out.copyPages(srcDoc, kept.map(s => s.origIndex));
+    pages.forEach((pg, i) => {
+      const extra = kept[i].rotate;
+      if (extra) {
+        const base = pg.getRotation().angle;
+        pg.setRotation(PDFLib.degrees((base + extra) % 360));
+      }
+      out.addPage(pg);
+    });
+    const raw = outNameEl.value.trim() || t('organize.outNameDefault');
+    const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
+    await deliver([{ name: `${base}.pdf`, bytes: await save(out) }], 'organized.zip');
+    show('ok', 'common.done');
+  } catch (e) {
+    show('error', e instanceof AppError ? e.i18nKey : 'error.generic', { message: String(e.message) });
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

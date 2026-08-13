@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>交錯合併 — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="interleave.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="interleave.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <label style="margin-top:0" data-i18n="interleave.front"></label>
+    <div id="dropFront" class="dropzone" data-i18n="interleave.dropFront"></div>
+    <ul id="listFront" class="filelist"></ul>
+
+    <label data-i18n="interleave.back"></label>
+    <div id="dropBack" class="dropzone" data-i18n="interleave.dropBack"></div>
+    <ul id="listBack" class="filelist"></ul>
+
+    <div class="radio-row" style="margin-top:1rem">
+      <label><input type="checkbox" id="reverse" checked><span data-i18n="interleave.reverse"></span></label>
+    </div>
+    <p class="hint" data-i18n="interleave.reverseHint"></p>
+
+    <label data-i18n="interleave.outName"></label>
+    <input type="text" id="outName">
+
+    <p id="counts" class="hint"></p>
+    <button id="run" class="primary" data-i18n="common.run"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { initI18n, t } from '../assets/core/i18n.mjs';
+import { createDropzone, renderFileList } from '../assets/core/dropzone.mjs';
+import { loadPdf, newPdf, save, AppError } from '../assets/core/pdf.mjs';
+import { deliver } from '../assets/core/zip.mjs';
+import { interleave } from '../assets/core/paging.mjs';
+import { sanitizeFileName } from '../assets/core/naming.mjs';
+
+const $ = id => document.getElementById(id);
+const outNameEl = $('outName');
+const msgEl = $('msg');
+const show = (cls, key, vars) => {
+  msgEl.className = `msg ${cls}`;
+  msgEl.textContent = t(key, vars);
+  // 記低呢句訊息係邊個 key 出嘅：updateCounts() 要靠呢個標記判斷「現正顯示緊
+  // 嗰句係咪自己之前貼嘅『頁數不一致』警告」，先識得喺頁數重新夾返啱嗰陣
+  // 自動撤走，唔會撤錯其他嚟源（例如檔案錯誤）嘅訊息。
+  msgEl.dataset.kind = key;
+  msgEl.hidden = false;
+};
+const clearMsg = () => { msgEl.hidden = true; delete msgEl.dataset.kind; };
+
+await initI18n();
+
+// 每一疊各自嘅已載入文件；乜都未揀時為 null。
+const docs = { front: null, back: null };
+
+// 跑緊一個 job 期間為 true（見底下 run click handler）：期間拒絕任何令
+// docs.front／docs.back 改變嘅嘗試——唔淨係停用兩個 dropzone（見底下
+// dz.setEnabled(false)，擋新增／拖放），仲要擋埋清單入面「移除」按鈕嗰條
+// 唔經 dropzone、直接掉一個新 files 陣列落嚟嘅路徑（renderFileList 嘅
+// onChange）。冇呢層防護嘅話：run() 一開波攞住嘅 snapshot 係跑之前嗰一刻
+// 嘅文件，但如果用戶跑緊嗰陣撳到「移除」，畫面上嘅清單／頁數提示會同
+// snapshot 唔同步——用戶見到嘅清單話冇晒檔案，但下載落嚟嗰份 PDF 仍然
+// 用緊佢已經話刪走咗嗰份，變成一個關於用戶已經改咗主意嘅選擇嘅假成功。
+let running = false;
+
+// 每一側各自嘅世代計數器：道理同 split.html 一樣——loadPdf 係 async，用戶可能喺
+// 讀緊嗰陣手快撳「移除」或者換另一個檔。兩側獨立計數，等前面一疊讀緊嘅時候
+// 用戶去撳後面一疊都唔會誤觸呢個守衛。
+const loadGeneration = { front: 0, back: 0 };
+
+// 「目前呢一側揀咗邊個檔」嘅唯一事實來源：新增檔案、拖放時部分被略過、以及
+// 喺清單度按「移除」，三種情況都要行呢一條路徑，令 docs[side]／頁數提示／
+// 兩個 list 永遠同畫面一致。
+async function applyFiles(side, dz, listId, files, skipped = { type: 0, limit: 0 }) {
+  const myGeneration = ++loadGeneration[side]; // 一定要喺任何 await 之前、同步咁攞
+  renderFileList($(listId), files, {
+    // running 期間直接吞咗「移除」按鈕嘅改動，唔會令 docs[side]／dz 內部
+    // state 喺成個 job 期間變——道理同 toolpage.mjs 嘅 onListChange 一樣。
+    onChange: f => { if (running) return; dz.setFiles(f); applyFiles(side, dz, listId, f); },
+  });
+  if (skipped.limit > 0 && files.length > 0) {
+    // 呢一側都係單檔模式（accept multiple: false）——超出上限嘅檔案一定係
+    // 一次過拖咗多過一個入嚟，話俾用戶知邊個先係真正被揀嗰個。
+    show('warn', 'warn.onlyFirstUsed', { name: skipped.keptName });
+  } else if (skipped.type > 0 && files.length > 0) {
+    show('warn', 'warn.filesSkipped', { n: skipped.type });
+  } else {
+    clearMsg();
+  }
+  if (files.length === 0) { docs[side] = null; updateCounts(); return; }
+  try {
+    const loaded = await loadPdf(files[0]);
+    if (myGeneration !== loadGeneration[side]) return; // 呢輪讀取已被取代，唔再寫入共用狀態
+    docs[side] = loaded;
+    updateCounts();
+  } catch (e) {
+    if (myGeneration !== loadGeneration[side]) return; // 同上：呢個 reject 都係舊一輪
+    docs[side] = null;
+    updateCounts();
+    show('error', e instanceof AppError ? e.i18nKey : 'error.corrupt');
+  }
+}
+
+function makeZone(side, dropId, listId) {
+  const dz = createDropzone($(dropId), {
+    accept: 'pdf', multiple: false,
+    onChange: (files, errKey, skipped) => {
+      // 正常嚟講 running 期間 dz 已經被 setEnabled(false) 停用，take() 唔會
+      // 行到呢度；呢個守衛係防禦性網，避免萬一有殘留事件漏網（同
+      // toolpage.mjs 嘅做法一樣）。
+      if (running) return;
+      // 呢個檔案本身完全冇被接納，現有已載入文件冇改變，唔經 applyFiles，淨係報錯。
+      if (errKey) { show('error', errKey); return; }
+      applyFiles(side, dz, listId, files, skipped);
+    },
+  });
+  return dz;
+}
+
+// 正反兩疊頁數唔一致時，成個 interleave() 都會照跑，出到嚟嘅 PDF 由缺頁
+// 嗰一組開始每一對都錯位——但畫面上除咗呢句「正面 X 頁、背面 Y 頁」嘅純
+// 資訊句之外冇任何訊號，用戶要自己心算比較兩個數字先發現有問題。呢度喺
+// 兩疊都揀咗之後就主動貼一句可見嘅警告（跟返 .msg.warn 樣式）——只警告
+// 唔阻擋：最後一張單面掃描本來就會令正反面唔一致，呢個係合法情況，唔可以
+// 因為呢個原因擋用戶處理。頁數之後夾返啱（例如換咗檔），先至用
+// msgEl.dataset.kind 呢個標記識別返「而家顯示緊嘅係咪自己上次貼嗰句」，
+// 撤返走，唔會誤撤走其他嚟源嘅訊息。
+function updateCounts() {
+  const f = docs.front ? docs.front.getPageCount() : 0;
+  const b = docs.back ? docs.back.getPageCount() : 0;
+  $('counts').textContent = (f || b)
+    ? t('interleave.counts', { front: f, back: b, total: f + b })
+    : '';
+  if (docs.front && docs.back && f !== b) {
+    show('warn', 'interleave.unequalStacks', { front: f, back: b });
+  } else if (msgEl.dataset.kind === 'interleave.unequalStacks') {
+    clearMsg();
+  }
+}
+
+const dzFront = makeZone('front', 'dropFront', 'listFront');
+const dzBack  = makeZone('back',  'dropBack',  'listBack');
+
+$('run').addEventListener('click', async () => {
+  if (!docs.front || !docs.back) { show('error', 'interleave.needBoth'); return; }
+  const btn = $('run');
+  const reverseEl = $('reverse');
+  // docs.front／docs.back 鎖定做 local snapshot，成個複製迴圈之後只讀呢兩個
+  // local 變量，唔再讀返 module-level 嘅 `docs`——後者可能喺 yieldToUI 之間
+  // 嘅每個 tick 被用戶換檔／移除檔案改變（見 applyFiles）。跟返 split.html
+  // 嘅 download handler 同一個做法：鎖住輸入控制項（下面）令呢種情況喺 UI
+  // 層面根本觸發唔到；snapshot 係第二層防護，即使鎖漏咗都唔會影響已經
+  // 開始嘅呢一輪處理——冇呢步嘅話，中途換咗其中一疊，出到嚟嘅 PDF 會夾雜
+  // 兩份唔同文件嘅頁面，仲要係「完成」冇任何警告；換走一份令頁數變少，
+  // 仲隨時 copyPages 越界，變成一句英文 raw error。
+  const frontSnapshot = docs.front;
+  const backSnapshot = docs.back;
+  btn.disabled = true;
+  running = true;
+  dzFront.setEnabled(false);
+  dzBack.setEnabled(false);
+  reverseEl.disabled = true;
+  outNameEl.disabled = true;
+  try {
+    const order = interleave(
+      frontSnapshot.getPageCount(),
+      backSnapshot.getPageCount(),
+      reverseEl.checked
+    );
+    const out = await newPdf();
+    for (let i = 0; i < order.length; i++) {
+      const { stack, index } = order[i];
+      const [pg] = await out.copyPages(stack === 'front' ? frontSnapshot : backSnapshot, [index]);
+      out.addPage(pg);
+      if (i % 10 === 0 || i === order.length - 1) {
+        show('ok', 'common.processing', { done: i + 1, total: order.length });
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    const raw = outNameEl.value.trim() || t('interleave.outNameDefault');
+    const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
+    // deliver() 嘅第二個參數（ZIP 名）淨係喺 outputs.length > 1 先會被讀；呢個
+    // 工具永遠只會輸出一份合併好嘅 PDF，所以完全唔使諗呢個參數點命名。
+    await deliver([{ name: `${base}.pdf`, bytes: await save(out) }]);
+    show('ok', 'common.done');
+  } catch (e) {
+    show('error', e instanceof AppError ? e.i18nKey : 'error.generic', { message: String(e.message) });
+  } finally {
+    btn.disabled = false;
+    running = false;
+    dzFront.setEnabled(true);
+    dzBack.setEnabled(true);
+    reverseEl.disabled = false;
+    outNameEl.disabled = false;
+  }
+});
+
+// 預設檔名要跟返介面語言，同 merge.html 用同一套做法：初次載入用 initI18n()
+// 揀好嘅語言即刻填一次；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一
+// 次——否則介面已經切晒去英文，輸出檔名仍然係中文「交錯合併結果.pdf」，同
+// 其餘所有文字唔一致。但一旦用戶自己打過檔名，呢個自動同步就要停手，唔可以
+// 蓋走佢哋打緊/打好嘅嘢——用 outNameTouched 記住「用戶有冇手動改過」。
+// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
+// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
+// 仲未 fetch 完，會讀到舊語言）。
+let outNameTouched = false;
+outNameEl.addEventListener('input', () => { outNameTouched = true; });
+const applyDefaultOutName = () => {
+  if (!outNameTouched) outNameEl.value = `${t('interleave.outNameDefault')}.pdf`;
+};
+applyDefaultOutName();
+// 同一個訊號仲要順手重畫一次「正面 X 頁、背面 Y 頁…」嗰句提示：嗰句係用
+// t() 現砌嘅純文字（updateCounts()），唔會跟住 <html lang> 自動更新（同
+// nup.html 嘅 sheetsInfo、organize.html 嘅 repaint() 一樣道理）。冇呢步嘅
+// 話，用戶已經揀好兩疊檔、見到呢句提示，先至切去英文介面，呢句會獨留喺
+// 舊語言，直到佢哋再郁一次檔案清單先會變返啱。
+new MutationObserver(() => { applyDefaultOutName(); updateCounts(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+</script>
+</body>
+</html>

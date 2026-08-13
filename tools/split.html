@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拆分 — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="split.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="split.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+    <ul id="filelist" class="filelist"></ul>
+    <p id="pagecount" class="hint"></p>
+  </div>
+
+  <div class="card">
+    <label data-i18n="split.modeCount" style="margin-top:0"></label>
+    <div class="radio-row">
+      <label><input type="radio" name="mode" value="count" checked><span data-i18n="split.modeCount"></span></label>
+      <label><input type="radio" name="mode" value="ranges"><span data-i18n="split.modeRanges"></span></label>
+      <label><input type="radio" name="mode" value="each"><span data-i18n="split.modeEach"></span></label>
+    </div>
+
+    <div id="opt-count">
+      <label data-i18n="split.everyN"></label>
+      <input type="number" id="everyN" value="4" min="1" step="1">
+    </div>
+
+    <div id="opt-ranges" hidden>
+      <label data-i18n="split.ranges"></label>
+      <input type="text" id="ranges" placeholder="1-3,4-8,9-12">
+      <p class="hint" data-i18n="split.rangesHint"></p>
+    </div>
+
+    <label data-i18n="split.roster"></label>
+    <textarea id="roster" data-i18n-placeholder="split.roster"></textarea>
+    <p class="hint" data-i18n="split.rosterHint"></p>
+
+    <label data-i18n="split.pattern"></label>
+    <input type="text" id="pattern" value="{n}">
+    <p class="hint" data-i18n="split.patternHint"></p>
+
+    <button id="preview" class="primary" data-i18n="split.preview"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+
+  <div class="card" id="previewCard" hidden>
+    <p id="summary"></p>
+    <div style="max-height:26rem;overflow:auto">
+      <table class="preview">
+        <thead><tr>
+          <th data-i18n="split.colRange"></th>
+          <th data-i18n="split.colName"></th>
+        </tr></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+    <button id="download" class="primary" data-i18n="split.download"></button>
+  </div>
+</div>
+
+<script type="module">
+import { initI18n, t, applyI18n } from '../assets/core/i18n.mjs';
+import { createDropzone, renderFileList } from '../assets/core/dropzone.mjs';
+import { loadPdf, newPdf, copyRange, save, AppError } from '../assets/core/pdf.mjs';
+import { deliver } from '../assets/core/zip.mjs';
+import { groupByCount, parseRanges, eachPage } from '../assets/core/paging.mjs';
+import { parseRoster, buildNames } from '../assets/core/naming.mjs';
+
+const $ = id => document.getElementById(id);
+const msgEl = $('msg');
+const show = (cls, key, vars) => {
+  msgEl.className = `msg ${cls}`;
+  msgEl.textContent = t(key, vars);
+  msgEl.hidden = false;
+};
+const clearMsg = () => { msgEl.hidden = true; };
+
+let doc = null;          // 已載入的 PDFDocument
+let totalPages = 0;
+let plan = null;         // {groups, names}
+
+await initI18n();
+
+// paging.mjs 拋出嘅 Error 帶機讀 code（見該檔頂部註解），呢度將已知 code 映射去
+// i18n key，等英文介面下嘅使用者唔會見到中文錯誤字句。未映射到嘅 code 一律
+// fallback 去 error.generic（仍然可用，只係無咁貼題）。
+function rangeErrorMsg(e) {
+  switch (e && e.code) {
+    case 'RANGES_EMPTY': return ['error.rangesEmpty', {}];
+    case 'RANGE_UNPARSEABLE': return ['error.rangeUnparseable', { part: e.part }];
+    case 'RANGE_OUT_OF_BOUNDS': return ['error.rangeOutOfBounds', { part: e.part, totalPages: e.totalPages }];
+    case 'RANGE_REVERSED': return ['error.rangeReversed', { part: e.part }];
+    case 'EVERY_N_INVALID': return ['error.everyNInvalid', {}];
+    default: return ['error.generic', { message: String(e && e.message) }];
+  }
+}
+
+// 世代計數器：每次呼叫 applyFiles 就遞增，喺 loadPdf 嘅 await 之後攞嚟核對——
+// 如果核對嗰刻已經唔係最新一代，即係呢一輪讀取已經俾之後（例如用戶手快按咗
+// 「移除」、或者換咗第二個檔）嘅另一輪 applyFiles 取代咗，就乜都唔做，直接
+// return，唔好用一份遲到嘅結果去覆蓋 doc／totalPages／頁數顯示／訊息。
+// 冇呢個守衛嘅話：讀緊一個大檔未完成、用戶手快撳走個檔，畫面睇落去乾淨
+// （檔案清單／頁數都清晒），但遲到嘅 loadPdf resolve 之後會偷偷將 doc 塞返
+// 落去——變成介面話「冇檔」但其實仲揸住舊檔，Download 落去會匯出一個用戶
+// 已經話咗唔要嘅文件。
+let loadGeneration = 0;
+
+// 「目前選咗邊個檔」嘅唯一事實來源：新增檔案（拖放／選檔）、拖放時部分檔案被
+// 略過、以及喺檔案清單度按「移除」，三種情況都要行呢一條路徑，令 doc／
+// totalPages／plan／頁數顯示／預覽表永遠同「畫面上仲顯示緊嘅檔案清單」一致。
+async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
+  const myGeneration = ++loadGeneration; // 一定要喺任何 await 之前、同步咁攞
+  $('previewCard').hidden = true;
+  plan = null;
+  renderFileList($('filelist'), files, { onChange: f => { dz.setFiles(f); applyFiles(f); } });
+  if (skipped.limit > 0 && files.length > 0) {
+    // 呢個工具本身就淨係揀一個檔（accept multiple: false），超出上限嘅檔案
+    // 一定係「一次過拖咗多過一個」——話俾用戶知邊個先係真正被揀嗰個。
+    show('warn', 'warn.onlyFirstUsed', { name: skipped.keptName });
+  } else if (skipped.type > 0 && files.length > 0) {
+    show('warn', 'warn.filesSkipped', { n: skipped.type });
+  } else {
+    clearMsg();
+  }
+  if (files.length === 0) { doc = null; totalPages = 0; $('pagecount').textContent = ''; return; }
+  try {
+    const loaded = await loadPdf(files[0]);
+    if (myGeneration !== loadGeneration) return; // 呢輪讀取已被取代，唔再寫入任何共用狀態
+    doc = loaded;
+    totalPages = doc.getPageCount();
+    $('pagecount').textContent = t('common.pages', { n: totalPages });
+  } catch (e) {
+    if (myGeneration !== loadGeneration) return; // 同上：呢個 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
+    doc = null; totalPages = 0; $('pagecount').textContent = '';
+    show('error', e instanceof AppError ? e.i18nKey : 'error.corrupt');
+  }
+}
+
+const dz = createDropzone($('drop'), {
+  accept: 'pdf', multiple: false,
+  onChange: (files, errKey, skipped) => {
+    // 呢個檔案本身完全冇被接納（例如成疊拖入嘅嘢一個 PDF 都冇），現有已載入
+    // 文件冇改變，唔經 applyFiles，淨係報錯。下面兩行刻意冇重設 doc／
+    // totalPages——因為「已選定嘅檔案」根本冇變，唔合資格嘅嗰個拖放淨係被拒絕
+    // 咗，唔係一次新選擇。日後如果 applyFiles 加多個要重設嘅欄位，記得諗吓
+    // 呢個分支使唔使跟手加，否則兩處會漸漸打唔埋。
+    if (errKey) { $('previewCard').hidden = true; plan = null; show('error', errKey); return; }
+    applyFiles(files, skipped);
+  },
+});
+
+document.querySelectorAll('input[name=mode]').forEach(r =>
+  r.addEventListener('change', () => {
+    const m = document.querySelector('input[name=mode]:checked').value;
+    $('opt-count').hidden = m !== 'count';
+    $('opt-ranges').hidden = m !== 'ranges';
+    $('previewCard').hidden = true;
+    plan = null;
+  })
+);
+
+// 任何會改變「頁碼 → 檔名」對照嘅欄位都要令舊預覽失效——否則畫面仲顯示緊
+// 產生預覽嗰刻嘅對照表，使用者執完名單錯字／改咗範圍之後，眼見表格冇變就以為
+// 冇問題，但其實 Download 用嘅係舊 plan。加新選項／欄位時記得擴充呢個清單
+// （拆分模式 radio 已經喺上面另外處理，因為佢仲要控制 opt-count/opt-ranges 顯隱）。
+['everyN', 'ranges', 'roster', 'pattern'].forEach(id => {
+  $(id).addEventListener('input', () => { $('previewCard').hidden = true; plan = null; });
+});
+
+function computeGroups() {
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  if (mode === 'each') return eachPage(totalPages);
+  if (mode === 'ranges') return parseRanges($('ranges').value, totalPages);
+  return groupByCount(totalPages, Number($('everyN').value));
+}
+
+// 畫（或者重畫）預覽表格同摘要句。淨係讀 `plan`（由「產生預覽」嗰下計好、
+// 之後保持不變）同兩個唔受語言影響嘅 DOM 值（每份頁數、拆分模式），唔會
+// 重新呼叫 computeGroups()／buildNames()——用戶未撳過「產生預覽」（plan
+// 為 null）或者之後改咗會令舊預覽失效嘅欄位（見上面嗰個 'input' 監聽器，
+// 會將 plan 設返做 null）嗰陣，唔應該畫任何嘢。
+function renderPreviewTable() {
+  if (!plan) return;
+  const { groups, names: items, rosterLen, unusedRosterLen } = plan;
+  const nPer = Number($('everyN').value);
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  const body = $('previewBody');
+  body.innerHTML = '';
+  groups.forEach((g, i) => {
+    const it = items[i];
+    const tr = document.createElement('tr');
+    const short = mode === 'count' && (g.end - g.start + 1) < nPer;
+    if (it.warning === 'duplicate') tr.className = 'dup';
+    else if (short || it.warning === 'roster-short') tr.className = 'warn';
+
+    const notes = [];
+    if (short) notes.push(t('split.shortPart', { n: nPer }));
+    if (it.warning === 'duplicate') notes.push(t('split.dupName'));
+
+    const tdRange = document.createElement('td');
+    tdRange.textContent = g.start === g.end
+      ? t('split.pageSingle', { n: g.start })
+      : t('split.pageRange', { start: g.start, end: g.end });
+    const tdName = document.createElement('td');
+    tdName.textContent = it.name + (notes.length ? `  ⚠ ${notes.join('；')}` : '');
+    tr.append(tdRange, tdName);
+    body.appendChild(tr);
+  });
+
+  const parts = [t('split.willSplit', { n: groups.length })];
+  if (rosterLen > 0 && rosterLen < groups.length)
+    parts.push(t('split.rosterShort', { roster: rosterLen, count: groups.length }));
+  if (unusedRosterLen > 0)
+    parts.push(t('split.rosterLong', { roster: rosterLen, count: groups.length }));
+  $('summary').textContent = parts.join(' ');
+}
+
+$('preview').addEventListener('click', () => {
+  if (!doc) { show('error', 'error.noFile'); return; }
+  let groups;
+  try {
+    groups = computeGroups();
+  } catch (e) {
+    const [key, vars] = rangeErrorMsg(e);
+    show('error', key, vars);
+    return;
+  }
+  const roster = parseRoster($('roster').value);
+  const { items, unusedRoster } = buildNames({
+    count: groups.length, roster, pattern: $('pattern').value,
+  });
+  plan = { groups, names: items, rosterLen: roster.length, unusedRosterLen: unusedRoster.length };
+
+  renderPreviewTable();
+  applyI18n();
+  clearMsg();
+  $('previewCard').hidden = false;
+});
+
+// 語言切換要順手重畫已經產生咗嘅預覽表：表入面嘅頁碼欄、警告字句、摘要句
+// 全部係用 t() 現砌，唔會跟住 <html lang> 自動更新（同 nup.html 嘅
+// sheetsInfo、interleave.html 嘅 counts 一樣道理）。冇呢步嘅話，用戶已經
+// 撳咗「產生預覽」見到中文表格，先切去英文介面，表格會獨留喺中文，同
+// 已經變晒英文嘅其餘介面唔一致——`plan` 保住晒計好嘅資料，唔使重新
+// computeGroups()／buildNames()，純粹換返一次文字。
+new MutationObserver(renderPreviewTable)
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+
+// 會令 plan／doc 失效或者過時嘅控制項，落 download 期間全部要停用：連同
+// 「產生預覽」掣本身，等使用者喺 ZIP 仲未落地之前，冇辦法令畫面上嘅預覽表
+// 同 download 迴圈實際用緊嗰份對唔上。
+const DOWNLOAD_LOCK_IDS = ['everyN', 'ranges', 'roster', 'pattern', 'preview'];
+const downloadLockEls = () => [
+  ...document.querySelectorAll('input[name=mode]'),
+  ...DOWNLOAD_LOCK_IDS.map($),
+];
+
+$('download').addEventListener('click', async () => {
+  if (!plan || !doc) { show('error', 'error.noFile'); return; }
+  const btn = $('download');
+  // plan／doc／檔名喺呢一刻鎖定做 local snapshot，成個迴圈之後只讀呢幾個
+  // local 變量，唔再讀返 module-level 嘅 `plan`／`doc`——後者會喺
+  // yieldToUI 之間嘅每個 tick 都可能被以下兩種操作改變：
+  //   1. 用戶撳「產生預覽」：module-level `plan` 被整個換走，冇跨越
+  //      setTimeout(0) yield 嘅迴圈會半份用舊 plan、半份用新 plan，
+  //      產出一個「表面完成」但內容駁錯咗嘅 ZIP；
+  //   2. 用戶改任何一個會令舊預覽失效嘅欄位（見上面嗰個 'input' 監聽器）：
+  //      module-level `plan` 被設做 null，下個 tick 讀 `plan.groups[i]`
+  //      即刻 TypeError，使用者見到嘅係英文 raw message 唔係翻譯好嘅錯誤。
+  // 鎖住輸入控制項（下面）令呢兩種情況喺 UI 層面根本觸發唔到；呢個 snapshot
+  // 係第二層防護，即使鎖漏咗都唔會影響已經開始嘅呢一輪 download。
+  const planSnapshot = plan;
+  const docSnapshot = doc;
+  const baseSnapshot = (dz.files[0]?.name || 'split').replace(/\.pdf$/i, '');
+  const lockEls = downloadLockEls();
+  btn.disabled = true;
+  lockEls.forEach(el => { el.disabled = true; });
+  try {
+    const outputs = [];
+    for (let i = 0; i < planSnapshot.groups.length; i++) {
+      const g = planSnapshot.groups[i];
+      const out = await newPdf();
+      await copyRange(docSnapshot, out, g.start, g.end);
+      outputs.push({ name: planSnapshot.names[i].name, bytes: await save(out) });
+      show('ok', 'common.processing', { done: i + 1, total: planSnapshot.groups.length });
+      await new Promise(r => setTimeout(r, 0));
+    }
+    await deliver(outputs, `${baseSnapshot}_${t('split.zipSuffix')}.zip`);
+    show('ok', 'common.done');
+  } catch (e) {
+    show('error', e instanceof AppError ? e.i18nKey : 'error.generic', { message: String(e.message) });
+  } finally {
+    btn.disabled = false;
+    lockEls.forEach(el => { el.disabled = false; });
+  }
+});
+</script>
+</body>
+</html>

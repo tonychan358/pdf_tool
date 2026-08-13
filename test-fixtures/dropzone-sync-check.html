@@ -1,0 +1,251 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>dropzone/toolpage sync check (throwaway harness — not shipped)</title>
+</head>
+<body>
+<style>
+  body { font-family: monospace; }
+  #drop1, #drop2, #drop3, #list1, #list2, #list3, #run1, #run2, #run3, #msg1, #msg2, #msg3 { display: none; }
+  #test-results { font-size: 22px; line-height: 1.4; white-space: pre-wrap; padding: 20px; background: #fff; color: #000; }
+</style>
+<div id="drop1"></div><ul id="list1"></ul><button id="run1" type="button"></button><div id="msg1" hidden></div>
+<div id="drop2"></div><ul id="list2"></ul><button id="run2" type="button"></button><div id="msg2" hidden></div>
+<div id="drop3"></div><ul id="list3"></ul><button id="run3" type="button"></button><div id="msg3" hidden></div>
+<div id="drop4"></div><ul id="list4"></ul><button id="run4" type="button"></button><div id="msg4" hidden></div>
+<div id="drop5"></div><ul id="list5"></ul><button id="run5" type="button"></button><div id="msg5" hidden></div>
+<div id="drop6"></div><ul id="list6"></ul><button id="run6" type="button"></button><div id="msg6" hidden></div>
+<div id="drop7a"></div><ul id="list7a"></ul><button id="run7a" type="button"></button><div id="msg7a" hidden></div>
+<div id="drop7b"></div><ul id="list7b"></ul><button id="run7b" type="button"></button><div id="msg7b" hidden></div>
+<pre id="test-results">pending</pre>
+<script type="module">
+// ---- 監聽器計數儀器：喺任何 test code 之前裝，用嚟直接數 addEventListener 幾多次
+// 掛落 <ul> 身上、同一個 drop 事件實際觸發咗個 handler 幾多次 ----
+const ulListenerCounts = new WeakMap(); // ul -> { dragstart, dragend, dragover, drop }
+const ulDropInvokeCounts = new WeakMap(); // ul -> number（'drop' handler 實際執行次數）
+const _origAddEventListener = EventTarget.prototype.addEventListener;
+EventTarget.prototype.addEventListener = function (type, listener, options) {
+  if (this && this.tagName === 'UL') {
+    const rec = ulListenerCounts.get(this) || {};
+    rec[type] = (rec[type] || 0) + 1;
+    ulListenerCounts.set(this, rec);
+    if (type === 'drop') {
+      const ul = this;
+      const wrapped = function (e) {
+        ulDropInvokeCounts.set(ul, (ulDropInvokeCounts.get(ul) || 0) + 1);
+        return listener.apply(this, arguments);
+      };
+      return _origAddEventListener.call(this, type, wrapped, options);
+    }
+  }
+  return _origAddEventListener.call(this, type, listener, options);
+};
+
+import { mountTool } from '../assets/core/toolpage.mjs';
+
+function makeFile(name) {
+  return new File(['x'], name, { type: 'application/pdf' });
+}
+function fireDrop(el, files) {
+  const ev = new Event('drop', { bubbles: true, cancelable: true });
+  ev.dataTransfer = { files };
+  el.dispatchEvent(ev);
+}
+function clickRemove(listEl, index) {
+  const li = listEl.querySelectorAll('li')[index];
+  li.querySelector('button').click();
+}
+function dragReorder(listEl, fromIndex, toIndex) {
+  const items = listEl.querySelectorAll('li');
+  items[fromIndex].dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true }));
+  items[toIndex].dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+}
+
+const results = {};
+
+try {
+  // ---- Test 1: 加三個檔 → 刪走中間嗰個 → 再加一個 → 唔應該翻生 ----
+  const ctrl1 = await mountTool({
+    dropEl: document.getElementById('drop1'),
+    listEl: document.getElementById('list1'),
+    runBtn: document.getElementById('run1'),
+    msgEl: document.getElementById('msg1'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  fireDrop(document.getElementById('drop1'), [makeFile('a1.pdf'), makeFile('a2.pdf'), makeFile('a3.pdf')]);
+  clickRemove(document.getElementById('list1'), 1); // 刪 a2.pdf（中間嗰個）
+  fireDrop(document.getElementById('drop1'), [makeFile('a4.pdf')]);
+  const names1 = ctrl1.files.map(f => f.name);
+  results.test1_removeThenAdd = {
+    expected: ['a1.pdf', 'a3.pdf', 'a4.pdf'],
+    actual: names1,
+    pass: JSON.stringify(names1) === JSON.stringify(['a1.pdf', 'a3.pdf', 'a4.pdf']),
+  };
+
+  // ---- Test 2: 加三個檔 → 手動拖去頭 → 再加一個 → 次序唔應該被打番亂 ----
+  const ctrl2 = await mountTool({
+    dropEl: document.getElementById('drop2'),
+    listEl: document.getElementById('list2'),
+    runBtn: document.getElementById('run2'),
+    msgEl: document.getElementById('msg2'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  fireDrop(document.getElementById('drop2'), [makeFile('b1.pdf'), makeFile('b2.pdf'), makeFile('b3.pdf')]);
+  dragReorder(document.getElementById('list2'), 2, 0); // 將 b3（index2）拖去最頭（index0）
+  fireDrop(document.getElementById('drop2'), [makeFile('b4.pdf')]);
+  const names2 = ctrl2.files.map(f => f.name);
+  results.test2_reorderThenAdd = {
+    expected: ['b3.pdf', 'b1.pdf', 'b2.pdf', 'b4.pdf'],
+    actual: names2,
+    pass: JSON.stringify(names2) === JSON.stringify(['b3.pdf', 'b1.pdf', 'b2.pdf', 'b4.pdf']),
+  };
+
+  // ---- Test 3: clear() 之後兩邊都要清晒，再 drop 要由零開始 ----
+  const ctrl3 = await mountTool({
+    dropEl: document.getElementById('drop3'),
+    listEl: document.getElementById('list3'),
+    runBtn: document.getElementById('run3'),
+    msgEl: document.getElementById('msg3'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  fireDrop(document.getElementById('drop3'), [makeFile('c1.pdf'), makeFile('c2.pdf'), makeFile('c3.pdf')]);
+  ctrl3.clearFiles();
+  const afterClearNames = ctrl3.files.map(f => f.name);
+  const afterClearListCount = document.getElementById('list3').querySelectorAll('li').length;
+  fireDrop(document.getElementById('drop3'), [makeFile('c4.pdf')]);
+  const names3 = ctrl3.files.map(f => f.name);
+  results.test3_clear = {
+    afterClearNames,
+    afterClearListCount,
+    namesAfterDropPostClear: names3,
+    pass: afterClearNames.length === 0 && afterClearListCount === 0 &&
+          JSON.stringify(names3) === JSON.stringify(['c4.pdf']),
+  };
+
+  // ---- Test 4：連續 5 次逐個加檔（觸發 5 次 render，加初始空 render 共 6 次）
+  //      之後 ul 身上應該淨係 1 組（每種各 1 個）拖曳監聽器；再做多一次拖曳排序，
+  //      drop handler 應該啱啱好觸發一次（唔係 N 次）----
+  const list4 = document.getElementById('list4');
+  const ctrl4 = await mountTool({
+    dropEl: document.getElementById('drop4'),
+    listEl: list4,
+    runBtn: document.getElementById('run4'),
+    msgEl: document.getElementById('msg4'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  ['f1.pdf', 'f2.pdf', 'f3.pdf', 'f4.pdf', 'f5.pdf'].forEach(name => {
+    fireDrop(document.getElementById('drop4'), [makeFile(name)]); // 逐個加，每次都係獨立一次 render
+  });
+  const countsAfter5 = ulListenerCounts.get(list4) || {};
+  const listenerCountPass =
+    countsAfter5.dragstart === 1 && countsAfter5.dragend === 1 &&
+    countsAfter5.dragover === 1 && countsAfter5.drop === 1;
+  // 再拖一次排序（f5 拖去最頭），睇下 drop handler 實際觸發咗幾多次
+  const invokeCountBefore = ulDropInvokeCounts.get(list4) || 0;
+  dragReorder(list4, 4, 0);
+  const invokeCountAfter = ulDropInvokeCounts.get(list4) || 0;
+  const singleInvokePass = (invokeCountAfter - invokeCountBefore) === 1;
+  results.test4_listenerCountAfterFiveRenders = {
+    listenerCountsOnUl: countsAfter5,
+    listenerCountPass,
+    dropHandlerInvokesForOneDrop: invokeCountAfter - invokeCountBefore,
+    singleInvokePass,
+    filesAfterReorder: ctrl4.files.map(f => f.name), // f5 應該拖咗去最頭
+    pass: listenerCountPass && singleInvokePass &&
+      JSON.stringify(ctrl4.files.map(f => f.name)) === JSON.stringify(['f5.pdf', 'f1.pdf', 'f2.pdf', 'f3.pdf', 'f4.pdf']),
+  };
+
+  // ---- Test 5：多次 render 之後，重排仍然要啱——加 4 個 → 排一次 → 再加 1 個 → 再排一次 ----
+  const ctrl5 = await mountTool({
+    dropEl: document.getElementById('drop5'),
+    listEl: document.getElementById('list5'),
+    runBtn: document.getElementById('run5'),
+    msgEl: document.getElementById('msg5'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  fireDrop(document.getElementById('drop5'), [makeFile('d1.pdf'), makeFile('d2.pdf'), makeFile('d3.pdf'), makeFile('d4.pdf')]);
+  dragReorder(document.getElementById('list5'), 3, 0); // d4 拖去最頭 → [d4,d1,d2,d3]
+  fireDrop(document.getElementById('drop5'), [makeFile('d5.pdf')]); // → [d4,d1,d2,d3,d5]
+  dragReorder(document.getElementById('list5'), 4, 1); // d5（index4）拖去 index1 → [d4,d5,d1,d2,d3]
+  const names5 = ctrl5.files.map(f => f.name);
+  results.test5_reorderAfterManyRenders = {
+    expected: ['d4.pdf', 'd5.pdf', 'd1.pdf', 'd2.pdf', 'd3.pdf'],
+    actual: names5,
+    pass: JSON.stringify(names5) === JSON.stringify(['d4.pdf', 'd5.pdf', 'd1.pdf', 'd2.pdf', 'd3.pdf']),
+  };
+
+  // ---- Test 6：多次 render 之後，刪除仍然要啱——逐個加 5 個檔（5 次獨立 render）
+  //      之後刪走中間嗰個 ----
+  const list6 = document.getElementById('list6');
+  const ctrl6 = await mountTool({
+    dropEl: document.getElementById('drop6'),
+    listEl: list6,
+    runBtn: document.getElementById('run6'),
+    msgEl: document.getElementById('msg6'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  ['e1.pdf', 'e2.pdf', 'e3.pdf', 'e4.pdf', 'e5.pdf'].forEach(name => {
+    fireDrop(document.getElementById('drop6'), [makeFile(name)]);
+  });
+  clickRemove(list6, 2); // 刪 e3.pdf（第三個）
+  const names6 = ctrl6.files.map(f => f.name);
+  results.test6_removeAfterManyRenders = {
+    expected: ['e1.pdf', 'e2.pdf', 'e4.pdf', 'e5.pdf'],
+    actual: names6,
+    pass: JSON.stringify(names6) === JSON.stringify(['e1.pdf', 'e2.pdf', 'e4.pdf', 'e5.pdf']),
+  };
+
+  // ---- Test 7：同一版面兩個 sortable dropzone，喺其中一個度拖曳唔應該影響另一個 ----
+  const list7a = document.getElementById('list7a');
+  const list7b = document.getElementById('list7b');
+  const ctrl7a = await mountTool({
+    dropEl: document.getElementById('drop7a'),
+    listEl: list7a,
+    runBtn: document.getElementById('run7a'),
+    msgEl: document.getElementById('msg7a'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  const ctrl7b = await mountTool({
+    dropEl: document.getElementById('drop7b'),
+    listEl: list7b,
+    runBtn: document.getElementById('run7b'),
+    msgEl: document.getElementById('msg7b'),
+    multiple: true, sortable: true,
+    run: async () => [],
+  });
+  fireDrop(document.getElementById('drop7a'), [makeFile('front1.pdf'), makeFile('front2.pdf'), makeFile('front3.pdf')]);
+  fireDrop(document.getElementById('drop7b'), [makeFile('back1.pdf'), makeFile('back2.pdf'), makeFile('back3.pdf')]);
+  const b_before = ctrl7b.files.map(f => f.name);
+  dragReorder(list7a, 2, 0); // 淨係喺 zone a 拖：front3 拖去最頭
+  const a_after = ctrl7a.files.map(f => f.name);
+  const b_after = ctrl7b.files.map(f => f.name);
+  results.test7_twoDropzonesNoInterference = {
+    zoneA_expected: ['front3.pdf', 'front1.pdf', 'front2.pdf'],
+    zoneA_actual: a_after,
+    zoneB_before: b_before,
+    zoneB_after: b_after,
+    // zone b 一定要喺 zone a 拖曳前後保持完全一樣（次序、內容都唔變）
+    zoneB_unaffected: JSON.stringify(b_before) === JSON.stringify(b_after),
+    pass: JSON.stringify(a_after) === JSON.stringify(['front3.pdf', 'front1.pdf', 'front2.pdf']) &&
+      JSON.stringify(b_before) === JSON.stringify(b_after),
+  };
+
+  results.allPass = results.test1_removeThenAdd.pass && results.test2_reorderThenAdd.pass && results.test3_clear.pass &&
+    results.test4_listenerCountAfterFiveRenders.pass && results.test5_reorderAfterManyRenders.pass &&
+    results.test6_removeAfterManyRenders.pass && results.test7_twoDropzonesNoInterference.pass;
+} catch (err) {
+  results.error = String((err && err.stack) || err);
+}
+
+document.getElementById('test-results').textContent = JSON.stringify(results, null, 2);
+</script>
+</body>
+</html>

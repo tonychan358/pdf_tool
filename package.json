@@ -1,0 +1,10 @@
+{
+  "name": "pdf-toolbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "本地 PDF 工具箱 — 純靜態、零後端、檔案不離開瀏覽器",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>圖片轉 PDF — PDF 工具箱</title>
+<link rel="stylesheet" href="../assets/css/design.css">
+<script src="../vendor/jszip.min.js"></script>
+</head>
+<body data-title-key="images.title">
+<div class="wrap">
+  <header class="site">
+    <h1 data-i18n="images.title"></h1>
+    <div>
+      <a href="../index.html" data-i18n="app.backToHub"></a>
+      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
+    </div>
+  </header>
+  <p class="privacy" data-i18n="app.privacy"></p>
+
+  <div class="card">
+    <div id="drop" class="dropzone" data-i18n="common.dropImages"></div>
+    <p class="hint" data-i18n="images.hint"></p>
+    <p class="hint" data-i18n="images.heicHint"></p>
+    <ul id="filelist" class="filelist"></ul>
+
+    <label data-i18n="images.orient"></label>
+    <div class="radio-row">
+      <label><input type="radio" name="orient" value="auto" checked><span data-i18n="images.auto"></span></label>
+      <label><input type="radio" name="orient" value="portrait"><span data-i18n="images.portrait"></span></label>
+      <label><input type="radio" name="orient" value="landscape"><span data-i18n="images.landscape"></span></label>
+    </div>
+
+    <label data-i18n="images.outName"></label>
+    <input type="text" id="outName">
+
+    <button id="run" class="primary" data-i18n="common.run"></button>
+    <div id="msg" class="msg" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
+import { newPdf, save, embedImage, AppError } from '../assets/core/pdf.mjs';
+import { A4, fitInto } from '../assets/core/paging.mjs';
+import { sanitizeFileName } from '../assets/core/naming.mjs';
+import { t } from '../assets/core/i18n.mjs';
+
+const MARGIN = 20;   // pt，四邊留白
+const outNameEl = document.getElementById('outName');
+
+await mountTool({
+  dropEl: document.getElementById('drop'),
+  listEl: document.getElementById('filelist'),
+  runBtn: document.getElementById('run'),
+  msgEl:  document.getElementById('msg'),
+  accept: 'image', multiple: true, sortable: true,
+  async run(files, ctx) {
+    const orient = document.querySelector('input[name=orient]:checked').value;
+    const doc = await newPdf();
+    for (let i = 0; i < files.length; i++) {
+      // 幾十張相入面邊一張出事，一定要話俾用戶知係邊個檔案——同 merge.html
+      // 對住多檔案嗰陣嘅做法一致：一張壞相唔應該淨係話「處理失敗」就中斷
+      // 成個批次，等用戶要一張張試先知邊張唔得。
+      let img;
+      try {
+        img = await embedImage(doc, files[i]);
+      } catch (e) {
+        const reason = e instanceof AppError ? t(e.i18nKey, e.vars) : String(e && e.message || e);
+        throw new AppError('error.imageFileFailed', { name: files[i].name, reason });
+      }
+      const landscape = orient === 'landscape'
+        || (orient === 'auto' && img.width > img.height);
+      const pw = landscape ? A4.H : A4.W;
+      const ph = landscape ? A4.W : A4.H;
+      const page = doc.addPage([pw, ph]);
+      const fit = fitInto({
+        srcW: img.width, srcH: img.height,
+        boxW: pw - MARGIN * 2, boxH: ph - MARGIN * 2,
+      });
+      page.drawImage(img, {
+        x: MARGIN + fit.x, y: MARGIN + fit.y, width: fit.w, height: fit.h,
+      });
+      ctx.progress(i + 1, files.length);
+      await yieldToUI(); // 逐張就俾瀏覽器 repaint 一次，進度條先會逐步畫得出（唔係一路凍結到尾先跳去 done）
+    }
+    const raw = outNameEl.value.trim() || t('images.outNameDefault');
+    const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
+    return [{ name: `${base}.pdf`, bytes: await save(doc) }];
+  },
+});
+
+// 預設檔名要跟返介面語言，同 merge.html／interleave.html 用同一套做法：初次
+// 載入用 mountTool() 入面 initI18n() 揀好嘅語言即刻填一次；之後用戶撳
+// lang-toggle 切換語言，都要即時跟住換一次——否則介面已經切晒去英文，輸出
+// 檔名仍然係中文「圖片合輯.pdf」，同其餘所有文字唔一致。但一旦用戶自己打過
+// 檔名，呢個自動同步就要停手，唔可以蓋走佢哋打緊/打好嘅嘢——用
+// outNameTouched 記住「用戶有冇手動改過」。
+// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
+// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
+// 仲未 fetch 完，會讀到舊語言）。
+let outNameTouched = false;
+outNameEl.addEventListener('input', () => { outNameTouched = true; });
+const applyDefaultOutName = () => {
+  if (!outNameTouched) outNameEl.value = `${t('images.outNameDefault')}.pdf`;
+};
+applyDefaultOutName();
+new MutationObserver(applyDefaultOutName)
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+</script>
+</body>
+</html>
