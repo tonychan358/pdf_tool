@@ -15,7 +15,9 @@
     "pages": "{n} pages",
     "remove": "Remove",
     "dragToReorder": "Drag to reorder",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
   },
   "error": {
     "encrypted": "This PDF is password-protected. Please unlock it first.",
@@ -69,7 +71,21 @@
     "title": "Merge",
     "outName": "Output filename",
     "outNameDefault": "merged",
-    "hint": "Drag the list below to change the merge order."
+    "hint": "Drag or use ▲▼ to change the order; files are merged top to bottom.",
+    "run": "Confirm order & merge",
+    "resultTitle": "Merged",
+    "resultSize": "File size: {size} ({n} pages)",
+    "compress": "Compress before download",
+    "levelLight": "Light (~144 dpi, better quality)",
+    "levelStandard": "Standard (~108 dpi)",
+    "levelStrong": "Strong (~72 dpi, smallest file)",
+    "compressNote": "Compression turns every page into an image; text will no longer be selectable or searchable.",
+    "download": "Download PDF",
+    "compressing": "Compressing page {done} / {total}",
+    "compressedOk": "Compressed to {size} ({pct}% smaller) and downloaded.",
+    "compressedBigger": "The compressed file ({size}) is not smaller, so the original was downloaded instead.",
+    "compressFailed": "Compression failed: {message}",
+    "stale": "The order or files changed. Please merge again."
   },
   "images": {
     "title": "Images to PDF",
@@ -135,7 +151,7 @@
     "split": "Split",
     "splitDesc": "Cut a stack of scanned homework into one file every N pages, named from your class list.",
     "merge": "Merge",
-    "mergeDesc": "Combine several PDFs into one, in the order you set.",
+    "mergeDesc": "Combine several PDFs into one, in the order you set, with optional compression.",
     "interleave": "Interleave",
     "interleaveDesc": "Scanned fronts and backs separately? Weave them back into the right page order.",
     "images": "Images to PDF",

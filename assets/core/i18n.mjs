@@ -27,6 +27,10 @@ function apply(root = document) {
   root.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   });
+  root.querySelectorAll('[data-i18n-label]').forEach(el => {
+    el.setAttribute('aria-label', t(el.dataset.i18nLabel));
+    el.title = t(el.dataset.i18nLabel);
+  });
   document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
   const titleKey = document.body.dataset.titleKey;
   document.title = titleKey ? `${t(titleKey)} — ${t('app.title')}` : t('app.title');

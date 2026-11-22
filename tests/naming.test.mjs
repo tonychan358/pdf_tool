@@ -133,3 +133,10 @@ test('buildNames：名單有兩項（其中一項帶尾碼，但兩項不同） 
   assert.equal(r.items[0].warning, null, '第一項無衝突');
   assert.equal(r.items[1].warning, null, '第二項亦無衝突');
 });
+
+test('formatSize：B／KB／MB', async () => {
+  const { formatSize } = await import('../assets/core/naming.mjs');
+  assert.equal(formatSize(500), '500 B');
+  assert.equal(formatSize(2048), '2.0 KB');
+  assert.equal(formatSize(5 * 1024 * 1024), '5.00 MB');
+});

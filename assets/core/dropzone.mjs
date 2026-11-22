@@ -1,4 +1,5 @@
 import { t } from './i18n.mjs';
+import { formatSize } from './naming.mjs';
 
 function matches(file, accept) {
   if (accept === 'pdf') return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -87,9 +88,24 @@ export function renderFileList(ul, files, { sortable = false, onChange = () => {
     li.dataset.index = String(i);
     li.innerHTML =
       `${sortable ? '<span class="grip">⠿</span>' : ''}` +
-      `<span class="name"></span><button type="button" data-i18n="common.remove"></button>`;
+      `<span class="name"></span><span class="size"></span>` +
+      // ▲▼：手機／觸控板拖曳唔到（HTML5 drag 唔支援 touch），要有按鈕版排序
+      (sortable ? `<button type="button" class="move" data-to="${i - 1}" data-i18n-label="common.moveUp" ${i === 0 ? 'disabled' : ''}>▲</button>` +
+        `<button type="button" class="move" data-to="${i + 1}" data-i18n-label="common.moveDown" ${i === files.length - 1 ? 'disabled' : ''}>▼</button>` : '') +
+      `<button type="button" class="remove" data-i18n="common.remove"></button>`;
     li.querySelector('.name').textContent = f.name;
-    const btn = li.querySelector('button');
+    li.querySelector('.size').textContent = formatSize(f.size);
+    li.querySelectorAll('.move').forEach(b => {
+      b.setAttribute('aria-label', t(b.dataset.i18nLabel));
+      b.title = t(b.dataset.i18nLabel);
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const next = files.slice();
+        next.splice(Number(b.dataset.to), 0, next.splice(i, 1)[0]);
+        onChange(next);
+      });
+    });
+    const btn = li.querySelector('.remove');
     // 呢粒掣係跟住檔案清單動態生成嘅，唔會跟住之後嘅語言切換自動重繪
     // （唔似其他靜態 HTML 入面嘅 data-i18n 元素，一開波已經喺 document 度俾
     // i18n.mjs 嘅 apply() 揀中）。淨係喺呢度用 t() 現砌一次文字，只夠俾

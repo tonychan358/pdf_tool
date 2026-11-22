@@ -24,7 +24,7 @@ v1 完成：七個工具全部可用，本機 port 8010。純靜態、零後端�
 
 ## 未做（刻意排除，非遺漏）
 
-- [ ] 公開部署到 GitHub Pages —— 需要 Lonely SIR 批准後才加 remote / push
+- [ ] 啟用 GitHub Pages —— 程式碼已上載（見下方 2026-08-13 日誌），但未開 Pages，仲未有公開網址
 - [ ] OCR、檔案壓縮、PDF 轉 Word —— 需要後端，與零後端定位衝突
 - [ ] 小冊子 booklet 排版、統一頁面尺寸 —— v2 再評估
 - [ ] CSV / Excel 名單上傳 —— 貼文字已足夠，加 SheetJS 不划算
@@ -58,3 +58,19 @@ v1 完成：七個工具全部可用，本機 port 8010。純靜態、零後端�
   12. **`images.hint`**：加新 key `images.heicHint`（zh／en 都有），教 iPhone 使用者將相機格式改做「最相容」或者先匯出做 JPG——HEIC 依家會被 `embedImage()` 拒收，冇呢句提示嘅話老師會撞極都唔知點解。
   13. **`design.css` grab 游標**：`.filelist li` 嘅 `cursor: grab` 移到新規則 `.filelist.sortable li`，`dropzone.mjs` 嘅 `renderFileList()` 同步喺 `ul` 度切換 `sortable` class；split／organize／nup／margin 用嘅單檔／唔支援排序清單唔再暗示拖得郁，merge／images-to-pdf 保持原有 grab 游標。
   - **驗證**：`npm test` 全綠、73→**75**（新增 cmaps 存在性 1 條、`parseRanges` 全形連接號 1 條）。另外用無頭 Chrome（原生 CDP WebSocket，同 T15 全站回歸同一手法）逐頁重新核對：8 頁（hub + 七個工具）Console 零 error、Network 零對外請求；再針對 6 個口頭驗證項逐條寫合成 `File`／`change` 事件腳本實測，全部 PASS（詳見 `.superpowers/sdd/2026-08-07-pdf-toolbox/final-fix-report.md`）。
+
+- 2026-08-13 — **上載到 GitHub**：`https://github.com/tonychan358/pdf_tool`（public）。
+  - **只上載 `100_Todo/pdf-toolbox/` 一個子目錄**，冇將成個工作區 repo 推上去（工作區 repo 內含記憶檔、教材、日誌、專欄草稿等私人資料）。工作區 repo **冇加任何 remote**，避免日後誤 push。
+  - 手法：`git archive HEAD 100_Todo/pdf-toolbox` 抽出 221 個已追蹤檔案 → 喺臨時目錄 `git init` → 單一 initial commit → `git push <url> main`。原本想用 `git subtree split` 保留 41 個相關 commit 嘅歷史，但工作區有 630 個 commit，喺 Windows 上約 10 秒行一個，估算要 1.7 小時，故放棄；開發歷史仍然完整保留喺工作區 repo。
+  - 上載前掃過全部檔案：無密碼／token／API key／個人 email／本機路徑外洩。
+  - Commit author 用 `255146567+tonychan358@users.noreply.github.com`（GitHub noreply），避免真實 email 寫入公開 git 歷史。
+  - **未做**：GitHub Pages 未啟用，所以仲未有可以派畀老師嘅公開網址。啟用後建議一併加 `.nojekyll`，並喺 `README.md` 頂寫明網址。
+
+- 2026-11-22 — **合併頁優化**（SIR 要求，之後再做全站換新風格）
+  - [x] 檔案清單顯示每個檔大小；可排序清單加 ▲▼ 按鈕（手機拖曳唔到），merge／images-to-pdf 共用
+  - [x] 合併掣改「確認次序並合併」；合併後唔即刻下載，改為結果卡顯示大小＋頁數
+  - [x] 可選「下載前壓縮」（輕度 144／標準 108／強力 72 dpi）：`thumbs.mjs` 新增 `compressPdf()`，逐頁轉 JPEG；壓縮後唔細過原檔就自動下載原檔；改次序／檔案會收起過時結果
+  - [x] `toolpage.mjs` 加可選 `onResult`／`onFilesChange`；`i18n.mjs` 支援 `data-i18n-label`（aria-label＋title）；`naming.mjs` 加 `formatSize()`＋測試
+  - [x] 驗證：`npm test` 76 條全綠；Playwright 桌面＋手機寬度端對端（排序、合併、原檔下載、壓縮 18.6 MB→248 KB、壓縮變大退回原檔、移除後收起結果、英文切換）、images-to-pdf 回歸
+  - [x] 上載到 `tonychan358/pdf_tool`（保留 CNAME `pdftools.g14techforlife.com`）
+  - [ ] 全站換新風格（先出 3–4 款 mockup 俾 SIR 揀）

@@ -15,7 +15,9 @@
     "pages": "共 {n} 頁",
     "remove": "移除",
     "dragToReorder": "可拖曳調整次序",
-    "untitled": "未命名"
+    "untitled": "未命名",
+    "moveUp": "上移",
+    "moveDown": "下移"
   },
   "error": {
     "encrypted": "此 PDF 有密碼保護，請先在其他工具解鎖，再重新拖入此頁。",
@@ -69,7 +71,21 @@
     "title": "合併",
     "outName": "輸出檔名",
     "outNameDefault": "合併結果",
-    "hint": "拖曳下方清單可調整合併次序。"
+    "hint": "可拖曳或用 ▲▼ 調整次序，由上至下合併。",
+    "run": "確認次序並合併",
+    "resultTitle": "合併完成",
+    "resultSize": "檔案大小：{size}（共 {n} 頁）",
+    "compress": "下載前壓縮",
+    "levelLight": "輕度（約 144 dpi，畫質較佳）",
+    "levelStandard": "標準（約 108 dpi）",
+    "levelStrong": "強力（約 72 dpi，檔案最細）",
+    "compressNote": "壓縮會把每頁轉成圖片，文字將無法選取或搜尋。",
+    "download": "下載 PDF",
+    "compressing": "壓縮中 {done} / {total} 頁",
+    "compressedOk": "壓縮後 {size}（減少 {pct}%），已下載。",
+    "compressedBigger": "壓縮後（{size}）並不比原檔小，已改為下載原檔。",
+    "compressFailed": "壓縮失敗：{message}",
+    "stale": "次序或檔案已更改，請重新合併。"
   },
   "images": {
     "title": "圖片轉 PDF",
@@ -135,7 +151,7 @@
     "split": "拆分",
     "splitDesc": "一疊掃描功課，每 4 頁自動拆成一份，並依班別名單命名。",
     "merge": "合併",
-    "mergeDesc": "把多份 PDF 依你排定的次序併成一份。",
+    "mergeDesc": "把多份 PDF 依你排定的次序併成一份，可選擇壓縮。",
     "interleave": "交錯合併",
     "interleaveDesc": "單面掃描器分開掃正反面後，咬合成正確頁序。",
     "images": "圖片轉 PDF",

@@ -26,6 +26,8 @@ export async function mountTool({
   accept = 'pdf', multiple = false, sortable = false,
   zipName = 'pdf-toolbox.zip',
   run,
+  onResult,       // 可選：提供就交俾佢處理輸出（例如合併頁先顯示大小再下載），唔即刻 deliver
+  onFilesChange,  // 可選：檔案清單每次改變都叫（合併頁用嚟收起已過時嘅結果）
 }) {
   await initI18n();
 
@@ -64,6 +66,7 @@ export async function mountTool({
     dz.setFiles(files);
     if (listEl) renderFileList(listEl, files, { sortable, onChange: onListChange });
     if (runBtn) runBtn.disabled = files.length === 0;
+    onFilesChange?.(files);
   };
 
   // 清單「移除」按鈕嘅改動入口：running 期間直接吞咗，唔會call落 sync()，
@@ -102,8 +105,8 @@ export async function mountTool({
         const outputs = await run(ctrl.files, {
           progress: (d, n) => ctrl.setProgress(d, n),
         });
-        await deliver(outputs, zipName);
-        ctrl.showOk('common.done');
+        if (onResult) { clearMsg(); await onResult(outputs); }
+        else { await deliver(outputs, zipName); ctrl.showOk('common.done'); }
       } catch (e) {
         if (e instanceof AppError) ctrl.showError(e.i18nKey, e.vars);
         else ctrl.showError('error.generic', { message: String(e && e.message || e) });

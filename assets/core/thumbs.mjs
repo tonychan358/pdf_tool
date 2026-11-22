@@ -74,3 +74,37 @@ export async function renderThumbs(file, onPage, onProgress = () => {}) {
     }
   }
 }
+
+// 壓縮：逐頁 render 做 JPEG，再以原頁面尺寸（已計旋轉）放返入新 PDF。
+// 代價係文字變圖片、揀唔到／搜唔到——呼叫方要話俾用戶知。
+// scale 1 ≈ 72 dpi；quality 係 canvas.toBlob 嘅 JPEG 質素（0–1）。
+export async function compressPdf(bytes, { scale, quality }, onProgress = () => {}) {
+  const { PDFDocument } = await import('../../vendor/pdf-lib.esm.min.js');
+  // slice：pdf.js 會 transfer 個 buffer 去 worker，唔複製就會令呼叫方手上嗰份變空
+  const loadingTask = pdfjs.getDocument({ data: bytes.slice(), cMapUrl: CMAP_URL, cMapPacked: true });
+  try {
+    const doc = await loadingTask.promise;
+    const out = await PDFDocument.create();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      ctx.fillStyle = '#fff'; // JPEG 冇透明，唔塗白底嘅話透明位會變黑
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      const img = await out.embedJpg(await blob.arrayBuffer());
+      out.addPage([base.width, base.height]).drawImage(img, { x: 0, y: 0, width: base.width, height: base.height });
+      page.cleanup();
+      onProgress(i, doc.numPages);
+      await new Promise(r => setTimeout(r, 0));
+    }
+    return await out.save({ useObjectStreams: true });
+  } finally {
+    try { await loadingTask.destroy(); } catch (e) { console.warn('compressPdf: destroy 失敗（已吞）', e); }
+  }
+}

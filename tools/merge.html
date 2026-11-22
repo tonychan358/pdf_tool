@@ -26,18 +26,43 @@
     <label data-i18n="merge.outName"></label>
     <input type="text" id="outName">
 
-    <button id="run" class="primary" data-i18n="common.run"></button>
+    <button id="run" class="primary" data-i18n="merge.run"></button>
     <div id="msg" class="msg" hidden></div>
+  </div>
+
+  <div class="card result" id="result" hidden>
+    <h2 data-i18n="merge.resultTitle"></h2>
+    <p class="big" id="resultSize"></p>
+    <label class="check"><input type="checkbox" id="wantCompress"> <span data-i18n="merge.compress"></span></label>
+    <div id="compressOpts" hidden>
+      <select id="level">
+        <option value="2,0.75" data-i18n="merge.levelLight"></option>
+        <option value="1.5,0.6" data-i18n="merge.levelStandard" selected></option>
+        <option value="1,0.45" data-i18n="merge.levelStrong"></option>
+      </select>
+      <p class="hint" data-i18n="merge.compressNote"></p>
+    </div>
+    <button id="download" class="primary" data-i18n="merge.download"></button>
+    <div id="dlMsg" class="msg" hidden></div>
   </div>
 </div>
 
 <script type="module">
 import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
 import { loadPdf, newPdf, copyRange, save, AppError } from '../assets/core/pdf.mjs';
-import { sanitizeFileName } from '../assets/core/naming.mjs';
+import { sanitizeFileName, formatSize } from '../assets/core/naming.mjs';
+import { compressPdf } from '../assets/core/thumbs.mjs';
 import { t } from '../assets/core/i18n.mjs';
 
 const outNameEl = document.getElementById('outName');
+const $ = id => document.getElementById(id);
+let merged = null;      // { name, bytes, pages }
+let compressed = null;  // { key, bytes } —— 同一級別唔使重壓
+const dlMsg = (cls, key, vars) => { $('dlMsg').className = `msg ${cls}`; $('dlMsg').textContent = t(key, vars); $('dlMsg').hidden = false; };
+const showResult = () => {
+  $('resultSize').textContent = t('merge.resultSize', { size: formatSize(merged.bytes.length), n: merged.pages });
+  $('result').hidden = false;
+};
 
 await mountTool({
   dropEl: document.getElementById('drop'),
@@ -45,6 +70,15 @@ await mountTool({
   runBtn: document.getElementById('run'),
   msgEl:  document.getElementById('msg'),
   accept: 'pdf', multiple: true, sortable: true,
+  // 次序／檔案一改，之前合併好嘅結果就唔再代表畫面上嘅清單，要收起
+  onFilesChange: () => { merged = compressed = null; $('result').hidden = true; $('dlMsg').hidden = true; },
+  async onResult([out]) {
+    merged = out;
+    compressed = null;
+    $('dlMsg').hidden = true;
+    showResult();
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
   async run(files, ctx) {
     const out = await newPdf();
     for (let i = 0; i < files.length; i++) {
@@ -66,9 +100,49 @@ await mountTool({
     }
     const raw = outNameEl.value.trim() || t('merge.outNameDefault');
     const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
-    return [{ name: `${base}.pdf`, bytes: await save(out) }];
+    return [{ name: `${base}.pdf`, bytes: await save(out), pages: out.getPageCount() }];
   },
 });
+
+$('wantCompress').addEventListener('change', () => { $('compressOpts').hidden = !$('wantCompress').checked; });
+
+function download(bytes, name) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+$('download').addEventListener('click', async () => {
+  if (!merged) { dlMsg('error', 'merge.stale'); return; }
+  if (!$('wantCompress').checked) { download(merged.bytes, merged.name); dlMsg('ok', 'common.done'); return; }
+  const key = $('level').value;
+  const btns = [$('download'), $('run'), $('level'), $('wantCompress')];
+  btns.forEach(b => { b.disabled = true; });
+  try {
+    if (compressed?.key !== key) {
+      const [scale, quality] = key.split(',').map(Number);
+      const bytes = await compressPdf(merged.bytes, { scale, quality }, (done, total) => dlMsg('ok', 'merge.compressing', { done, total }));
+      compressed = { key, bytes };
+    }
+    const c = compressed.bytes;
+    if (c.length >= merged.bytes.length) {
+      download(merged.bytes, merged.name);
+      dlMsg('warn', 'merge.compressedBigger', { size: formatSize(c.length) });
+    } else {
+      download(c, merged.name.replace(/\.pdf$/i, '_compressed.pdf'));
+      dlMsg('ok', 'merge.compressedOk', { size: formatSize(c.length), pct: Math.round((1 - c.length / merged.bytes.length) * 100) });
+    }
+  } catch (e) {
+    dlMsg('error', 'merge.compressFailed', { message: String(e && e.message || e) });
+  } finally {
+    btns.forEach(b => { b.disabled = false; });
+  }
+});
+
+// 語言切換後重寫結果大小句子（佢係動態砌出嚟，apply() 唔會自動更新）
+new MutationObserver(() => { if (merged) showResult(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 
 // 預設檔名要跟返介面語言：初次載入用返 mountTool() 入面 initI18n() 揀好嘅
 // 語言；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一次——否則「頁面一

@@ -56,3 +56,10 @@ export function buildNames({ count, roster = [], pattern = '' }) {
 
   return { items, unusedRoster: roster.slice(count) };
 }
+
+// 位元組 → 「12.3 KB」／「4.56 MB」
+export function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
