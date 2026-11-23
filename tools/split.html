@@ -8,73 +8,67 @@
 <script src="../vendor/jszip.min.js"></script>
 </head>
 <body data-title-key="split.title">
-<div class="wrap">
-  <header class="site">
-    <h1 data-i18n="split.title"></h1>
-    <div>
-      <a href="../index.html" data-i18n="app.backToHub"></a>
-      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
-    </div>
-  </header>
-  <p class="privacy" data-i18n="app.privacy"></p>
-
-  <div class="card">
-    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
-    <ul id="filelist" class="filelist"></ul>
-    <p id="pagecount" class="hint"></p>
-  </div>
-
-  <div class="card">
-    <label data-i18n="split.modeCount" style="margin-top:0"></label>
+<div data-wizard>
+  <ol class="stepper" data-stepper data-i18n-label="wizard.steps">
+    <li class="step active" data-step-number="1" aria-current="step"><span class="num">1</span><span data-i18n="wizard.upload"></span></li>
+    <li class="step" data-step-number="2"><span class="num">2</span><span data-i18n="split.stepName"></span></li>
+    <li class="step" data-step-number="3"><span class="num">3</span><span data-i18n="wizard.download"></span></li>
+  </ol>
+  <main class="wrap workspace">
+    <section data-step="1" class="upload-panel" aria-labelledby="upload-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="split.title"></p><h1 id="upload-title" tabindex="-1" data-i18n="wizard.uploadTitle"></h1><p data-i18n="wizard.uploadHint"></p></div></div>
+      <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+      <div data-file-list-slot="1"></div>
+      <div class="action-bar"><button type="button" class="btn" data-wizard-action="adjust" data-continue hidden data-i18n="wizard.continue"></button></div>
+    </section>
+    <section data-step="2" hidden aria-labelledby="settings-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="split.title"></p><h1 id="settings-title" tabindex="-1" data-i18n="split.heading"></h1><p data-i18n="split.intro"></p></div><span class="step-counter" data-i18n="wizard.stepCount" data-i18n-vars='{"n":2}'></span></div>
+      <div class="workspace-grid"><div>
+        <div data-file-list-slot="2"><ul id="filelist" class="filelist"></ul></div>
+    <fieldset class="split-modes">
+      <legend data-i18n="split.modeLegend"></legend>
     <div class="radio-row">
       <label><input type="radio" name="mode" value="count" checked><span data-i18n="split.modeCount"></span></label>
       <label><input type="radio" name="mode" value="ranges"><span data-i18n="split.modeRanges"></span></label>
       <label><input type="radio" name="mode" value="each"><span data-i18n="split.modeEach"></span></label>
     </div>
+    </fieldset>
 
     <div id="opt-count">
-      <label data-i18n="split.everyN"></label>
+      <label for="everyN" data-i18n="split.everyN"></label>
       <input type="number" id="everyN" value="4" min="1" step="1">
     </div>
 
     <div id="opt-ranges" hidden>
-      <label data-i18n="split.ranges"></label>
+      <label for="ranges" data-i18n="split.ranges"></label>
       <input type="text" id="ranges" placeholder="1-3,4-8,9-12">
       <p class="hint" data-i18n="split.rangesHint"></p>
     </div>
 
-    <label data-i18n="split.roster"></label>
+    <label for="roster" data-i18n="split.roster"></label>
     <textarea id="roster" data-i18n-placeholder="split.roster"></textarea>
     <p class="hint" data-i18n="split.rosterHint"></p>
 
-    <label data-i18n="split.pattern"></label>
+    <label for="pattern" data-i18n="split.pattern"></label>
     <input type="text" id="pattern" value="{n}">
     <p class="hint" data-i18n="split.patternHint"></p>
 
     <button id="preview" class="primary" data-i18n="split.preview"></button>
-    <div id="msg" class="msg" hidden></div>
-  </div>
-
-  <div class="card" id="previewCard" hidden>
-    <p id="summary"></p>
-    <div style="max-height:26rem;overflow:auto">
-      <table class="preview">
-        <thead><tr>
-          <th data-i18n="split.colRange"></th>
-          <th data-i18n="split.colName"></th>
-        </tr></thead>
-        <tbody id="previewBody"></tbody>
-      </table>
-    </div>
-    <button id="download" class="primary" data-i18n="split.download"></button>
-  </div>
+<div class="card" id="previewCard" hidden><p id="summary"></p><div style="max-height:26rem;overflow:auto"><table class="preview"><thead><tr><th data-i18n="split.colRange"></th><th data-i18n="split.colName"></th></tr></thead><tbody id="previewBody"></tbody></table></div></div>
+      </div><aside data-i18n-label="split.summaryTitle"><div class="side-panel"><h3 data-i18n="split.summaryTitle"></h3><div class="summary-item"><span data-i18n="wizard.summaryPages"></span><strong id="pagecount"></strong></div><div class="summary-item"><span data-i18n="wizard.summaryOutputs"></span><strong id="outputcount" data-i18n="wizard.previewPending"></strong></div></div></aside></div>
+      <div class="action-bar"><button type="button" class="back-link" data-wizard-action="upload"><span aria-hidden="true">&#8592;</span><span data-i18n="wizard.backUpload"></span></button><button type="button" id="run" class="btn" disabled><span data-i18n="split.run"></span><span aria-hidden="true">&#8594;</span></button></div>
+    </section>
+    <section data-step="3" hidden aria-label="PDF"><div data-completion></div><div class="complete-actions"><button type="button" class="back-link" data-wizard-action="adjust"><span aria-hidden="true">&#8592;</span><span data-i18n="wizard.backAdjust"></span></button><button type="button" class="text-btn" data-wizard-action="restart" data-i18n="split.restart"></button></div></section>
+    <div id="msg" class="msg" role="status" aria-live="polite" hidden></div>
+  </main>
 </div>
-
 <script type="module">
 import { initI18n, t, applyI18n } from '../assets/core/i18n.mjs';
 import { createDropzone, renderFileList } from '../assets/core/dropzone.mjs';
 import { loadPdf, newPdf, copyRange, save, AppError } from '../assets/core/pdf.mjs';
-import { deliver } from '../assets/core/zip.mjs';
+import { mountWizardShell } from '../assets/core/toolpage.mjs';
+import { receiveHandoff } from '../assets/core/handoff.mjs';
+import { createInputGuard } from '../assets/core/wizard-state.mjs';
 import { groupByCount, parseRanges, eachPage } from '../assets/core/paging.mjs';
 import { parseRoster, buildNames } from '../assets/core/naming.mjs';
 
@@ -82,10 +76,14 @@ const $ = id => document.getElementById(id);
 const msgEl = $('msg');
 const show = (cls, key, vars) => {
   msgEl.className = `msg ${cls}`;
+  msgEl.dataset.i18n = key;
+  msgEl.dataset.i18nVars = JSON.stringify(vars || {});
   msgEl.textContent = t(key, vars);
   msgEl.hidden = false;
 };
 const clearMsg = () => { msgEl.hidden = true; };
+let shell;
+let running = false;
 
 let doc = null;          // 已載入的 PDFDocument
 let totalPages = 0;
@@ -120,11 +118,21 @@ let loadGeneration = 0;
 // 「目前選咗邊個檔」嘅唯一事實來源：新增檔案（拖放／選檔）、拖放時部分檔案被
 // 略過、以及喺檔案清單度按「移除」，三種情況都要行呢一條路徑，令 doc／
 // totalPages／plan／頁數顯示／預覽表永遠同「畫面上仲顯示緊嘅檔案清單」一致。
-async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
+async function applyFiles(files, skipped = { type: 0, limit: 0 }, lease) {
+  if (running || shell?.busy || !inputGuard.allows(lease)) return false;
+  if (lease === undefined) inputGuard.invalidate();
   const myGeneration = ++loadGeneration; // 一定要喺任何 await 之前、同步咁攞
   $('previewCard').hidden = true;
   plan = null;
-  renderFileList($('filelist'), files, { onChange: f => { dz.setFiles(f); applyFiles(f); } });
+  doc = null; totalPages = 0;
+  delete $('pagecount').dataset.i18n;
+  delete $('pagecount').dataset.i18nVars;
+  $('pagecount').textContent = '';
+  dz.setFiles(files);
+  shell?.reset();
+  shell?.setStep('files');
+  updateLocks();
+  renderFileList($('filelist'), files, { onChange: f => { if (running || shell?.busy || inputGuard.locked) return; dz.setFiles(f); applyFiles(f); } });
   if (skipped.limit > 0 && files.length > 0) {
     // 呢個工具本身就淨係揀一個檔（accept multiple: false），超出上限嘅檔案
     // 一定係「一次過拖咗多過一個」——話俾用戶知邊個先係真正被揀嗰個。
@@ -134,16 +142,20 @@ async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
   } else {
     clearMsg();
   }
-  if (files.length === 0) { doc = null; totalPages = 0; $('pagecount').textContent = ''; return; }
+  if (files.length === 0) { $('pagecount').textContent = ''; updateLocks(); return; }
   try {
     const loaded = await loadPdf(files[0]);
-    if (myGeneration !== loadGeneration) return; // 呢輪讀取已被取代，唔再寫入任何共用狀態
+    if (myGeneration !== loadGeneration || (lease !== undefined && !inputGuard.allows(lease))) return; // 呢輪讀取已被取代，唔再寫入任何共用狀態
     doc = loaded;
     totalPages = doc.getPageCount();
+    $('pagecount').dataset.i18n = 'common.pages';
+    $('pagecount').dataset.i18nVars = JSON.stringify({ n: totalPages });
     $('pagecount').textContent = t('common.pages', { n: totalPages });
+    updateLocks();
   } catch (e) {
-    if (myGeneration !== loadGeneration) return; // 同上：呢個 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
+    if (myGeneration !== loadGeneration || (lease !== undefined && !inputGuard.allows(lease))) return; // 同上：呢個 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
     doc = null; totalPages = 0; $('pagecount').textContent = '';
+    updateLocks();
     show('error', e instanceof AppError ? e.i18nKey : 'error.corrupt');
   }
 }
@@ -151,12 +163,13 @@ async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
 const dz = createDropzone($('drop'), {
   accept: 'pdf', multiple: false,
   onChange: (files, errKey, skipped) => {
+    if (running || shell?.busy || inputGuard.locked) return;
     // 呢個檔案本身完全冇被接納（例如成疊拖入嘅嘢一個 PDF 都冇），現有已載入
     // 文件冇改變，唔經 applyFiles，淨係報錯。下面兩行刻意冇重設 doc／
     // totalPages——因為「已選定嘅檔案」根本冇變，唔合資格嘅嗰個拖放淨係被拒絕
     // 咗，唔係一次新選擇。日後如果 applyFiles 加多個要重設嘅欄位，記得諗吓
     // 呢個分支使唔使跟手加，否則兩處會漸漸打唔埋。
-    if (errKey) { $('previewCard').hidden = true; plan = null; show('error', errKey); return; }
+    if (errKey) { $('previewCard').hidden = true; plan = null; updateLocks(); show('error', errKey); return; }
     applyFiles(files, skipped);
   },
 });
@@ -168,6 +181,7 @@ document.querySelectorAll('input[name=mode]').forEach(r =>
     $('opt-ranges').hidden = m !== 'ranges';
     $('previewCard').hidden = true;
     plan = null;
+    updateLocks();
   })
 );
 
@@ -176,7 +190,7 @@ document.querySelectorAll('input[name=mode]').forEach(r =>
 // 冇問題，但其實 Download 用嘅係舊 plan。加新選項／欄位時記得擴充呢個清單
 // （拆分模式 radio 已經喺上面另外處理，因為佢仲要控制 opt-count/opt-ranges 顯隱）。
 ['everyN', 'ranges', 'roster', 'pattern'].forEach(id => {
-  $(id).addEventListener('input', () => { $('previewCard').hidden = true; plan = null; });
+  $(id).addEventListener('input', () => { $('previewCard').hidden = true; plan = null; updateLocks(); });
 });
 
 function computeGroups() {
@@ -225,9 +239,13 @@ function renderPreviewTable() {
   if (unusedRosterLen > 0)
     parts.push(t('split.rosterLong', { roster: rosterLen, count: groups.length }));
   $('summary').textContent = parts.join(' ');
+  $('outputcount').dataset.i18n = 'wizard.fileCount';
+  $('outputcount').dataset.i18nVars = JSON.stringify({ n: groups.length });
+  $('outputcount').textContent = t('wizard.fileCount', { n: groups.length });
 }
 
 $('preview').addEventListener('click', () => {
+  if (running || shell?.busy || inputGuard.locked) return;
   if (!doc) { show('error', 'error.noFile'); return; }
   let groups;
   try {
@@ -247,6 +265,7 @@ $('preview').addEventListener('click', () => {
   applyI18n();
   clearMsg();
   $('previewCard').hidden = false;
+  updateLocks();
 });
 
 // 語言切換要順手重畫已經產生咗嘅預覽表：表入面嘅頁碼欄、警告字句、摘要句
@@ -261,15 +280,13 @@ new MutationObserver(renderPreviewTable)
 // 會令 plan／doc 失效或者過時嘅控制項，落 download 期間全部要停用：連同
 // 「產生預覽」掣本身，等使用者喺 ZIP 仲未落地之前，冇辦法令畫面上嘅預覽表
 // 同 download 迴圈實際用緊嗰份對唔上。
-const DOWNLOAD_LOCK_IDS = ['everyN', 'ranges', 'roster', 'pattern', 'preview'];
-const downloadLockEls = () => [
-  ...document.querySelectorAll('input[name=mode]'),
-  ...DOWNLOAD_LOCK_IDS.map($),
-];
+// 設定欄位由 mountWizardShell 共用鎖保存及恢復原本 disabled 狀態；
+// 「產生預覽」仍由 updateLocks 依 doc 是否可用決定。
 
-$('download').addEventListener('click', async () => {
+$('run').addEventListener('click', async () => {
+  if (running || shell?.busy || inputGuard.locked) return;
   if (!plan || !doc) { show('error', 'error.noFile'); return; }
-  const btn = $('download');
+  const btn = $('run');
   // plan／doc／檔名喺呢一刻鎖定做 local snapshot，成個迴圈之後只讀呢幾個
   // local 變量，唔再讀返 module-level 嘅 `plan`／`doc`——後者會喺
   // yieldToUI 之間嘅每個 tick 都可能被以下兩種操作改變：
@@ -284,9 +301,10 @@ $('download').addEventListener('click', async () => {
   const planSnapshot = plan;
   const docSnapshot = doc;
   const baseSnapshot = (dz.files[0]?.name || 'split').replace(/\.pdf$/i, '');
-  const lockEls = downloadLockEls();
+  running = true;
+  inputGuard.invalidate();
+  updateLocks();
   btn.disabled = true;
-  lockEls.forEach(el => { el.disabled = true; });
   try {
     const outputs = [];
     for (let i = 0; i < planSnapshot.groups.length; i++) {
@@ -297,15 +315,44 @@ $('download').addEventListener('click', async () => {
       show('ok', 'common.processing', { done: i + 1, total: planSnapshot.groups.length });
       await new Promise(r => setTimeout(r, 0));
     }
-    await deliver(outputs, `${baseSnapshot}_${t('split.zipSuffix')}.zip`);
-    show('ok', 'common.done');
+    clearMsg();
+    shell.setOutputs(outputs, `${baseSnapshot}_${t('split.zipSuffix')}.zip`);
+    shell.setStep('complete');
   } catch (e) {
     show('error', e instanceof AppError ? e.i18nKey : 'error.generic', { message: String(e.message) });
   } finally {
-    btn.disabled = false;
-    lockEls.forEach(el => { el.disabled = false; });
+    running = false;
+    updateLocks();
   }
 });
+
+function updateLocks() {
+  const locked = running || !!shell?.busy || inputGuard.locked;
+  dz.setEnabled(!locked);
+  $('run').disabled = locked || !plan || !doc;
+  $('preview').disabled = locked || !doc;
+  $('filelist').setAttribute('aria-disabled', String(locked));
+  $('filelist').querySelectorAll('button').forEach(b => { b.disabled = locked; });
+  shell?.updateLocks(locked);
+  if (!plan) {
+    $('outputcount').dataset.i18n = 'wizard.previewPending';
+    delete $('outputcount').dataset.i18nVars;
+    $('outputcount').textContent = t('wizard.previewPending');
+  }
+}
+const inputGuard = createInputGuard(updateLocks);
+shell = mountWizardShell({
+  root: document.querySelector('[data-wizard]'), listEl: $('filelist'),
+  options: { currentTool: 'split', step2Key: 'split.stepName', completeTitleKey: 'split.readyTitle' },
+  getFileCount: () => dz.files.length,
+  onBusy: updateLocks,
+  onAction(action) {
+    if (action === 'add') dz.open();
+    if (action === 'restart') { clearMsg(); dz.clear(); }
+  },
+});
+updateLocks();
+await receiveHandoff({ targetTool: 'split', inputGuard, onFile: (file, lease) => applyFiles([file], undefined, lease), onError: (key, vars) => show('error', key, vars), onLoaded: name => { if (doc) show('ok', 'handoff.loaded', { name }); } });
 </script>
 </body>
 </html>

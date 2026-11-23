@@ -1,5 +1,6 @@
 import { t } from './i18n.mjs';
 import { formatSize } from './naming.mjs';
+import { getPageCount } from './filemeta.mjs';
 
 function matches(file, accept) {
   if (accept === 'pdf') return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -9,6 +10,8 @@ function matches(file, accept) {
 
 export function createDropzone(el, { accept = 'pdf', multiple = false, onChange = () => {} }) {
   const state = { files: [], enabled: true };
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
   const input = document.createElement('input');
   input.type = 'file';
   input.hidden = true;
@@ -41,6 +44,12 @@ export function createDropzone(el, { accept = 'pdf', multiple = false, onChange 
   };
 
   el.addEventListener('click', () => { if (state.enabled) input.click(); });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (state.enabled) input.click();
+    }
+  });
   input.addEventListener('change', () => { take(input.files); input.value = ''; });
   el.addEventListener('dragover', e => { e.preventDefault(); if (state.enabled) el.classList.add('over'); });
   el.addEventListener('dragleave', () => el.classList.remove('over'));
@@ -56,6 +65,7 @@ export function createDropzone(el, { accept = 'pdf', multiple = false, onChange 
     // 喺自己已經係 onChange 嘅呼叫源頭之下，可以將最新結果寫返入嚟而唔會遞迴。
     setFiles(v) { state.files = v; },
     clear() { state.files = []; onChange(state.files, null, { type: 0, limit: 0 }); },
+    open() { if (state.enabled) input.click(); },
     // 工具跑緊一個 job 嗰陣攞嚟停用呢個 dropzone：停止接受新拖放／選檔，等
     // 「畫面上顯示緊嘅檔案清單」喺成個 job 期間唔會變——否則用戶中途換咗
     // 檔，job 用嘅仍然係舊選擇，完成時卻話俾佢哋知「完成，已下載」，變成
@@ -66,6 +76,7 @@ export function createDropzone(el, { accept = 'pdf', multiple = false, onChange 
       state.enabled = v;
       input.disabled = !v;
       el.classList.toggle('disabled', !v);
+      el.setAttribute('aria-disabled', String(!v));
     },
   };
 }
@@ -84,43 +95,54 @@ export function renderFileList(ul, files, { sortable = false, onChange = () => {
   ul.innerHTML = '';
   files.forEach((f, i) => {
     const li = document.createElement('li');
-    li.draggable = sortable;
+    li.className = 'file-row';
+    li.draggable = sortable && ul.getAttribute('aria-disabled') !== 'true';
     li.dataset.index = String(i);
     li.innerHTML =
-      `${sortable ? '<span class="grip">⠿</span>' : ''}` +
-      `<span class="name"></span><span class="size"></span>` +
+      `${sortable ? '<span class="grip drag-handle" aria-hidden="true">⠿</span>' : ''}` +
+      `<span class="order-number" aria-hidden="true">${i + 1}</span><span class="paper-thumb" aria-hidden="true"></span>` +
+      `<span class="file-info"><span class="name"></span><span class="size"></span></span><span class="row-actions">` +
       // ▲▼：手機／觸控板拖曳唔到（HTML5 drag 唔支援 touch），要有按鈕版排序
       (sortable ? `<button type="button" class="move" data-to="${i - 1}" data-i18n-label="common.moveUp" ${i === 0 ? 'disabled' : ''}>▲</button>` +
         `<button type="button" class="move" data-to="${i + 1}" data-i18n-label="common.moveDown" ${i === files.length - 1 ? 'disabled' : ''}>▼</button>` : '') +
-      `<button type="button" class="remove" data-i18n="common.remove"></button>`;
+      `<button type="button" class="remove" data-i18n-label="common.remove">✕</button></span>`;
     li.querySelector('.name').textContent = f.name;
     li.querySelector('.size').textContent = formatSize(f.size);
+    getPageCount(f).then(n => {
+      if (n === null || !li.isConnected) return;
+      const size = li.querySelector('.size');
+      size.dataset.i18n = 'wizard.fileMeta';
+      size.dataset.i18nVars = JSON.stringify({ size: formatSize(f.size), n });
+      size.textContent = t('wizard.fileMeta', { size: formatSize(f.size), n });
+    });
     li.querySelectorAll('.move').forEach(b => {
       b.setAttribute('aria-label', t(b.dataset.i18nLabel));
       b.title = t(b.dataset.i18nLabel);
       b.addEventListener('click', e => {
         e.stopPropagation();
+        const hadFocus = document.activeElement === b;
         const next = files.slice();
         next.splice(Number(b.dataset.to), 0, next.splice(i, 1)[0]);
         onChange(next);
+        if (hadFocus) {
+          const buttons = ul.children[Number(b.dataset.to)]?.querySelectorAll('button');
+          const preferred = buttons?.[Number(b.dataset.to) < i ? 0 : 1];
+          (preferred && !preferred.disabled ? preferred : [...(buttons || [])].find(button => !button.disabled))?.focus();
+        }
       });
     });
     const btn = li.querySelector('.remove');
-    // 呢粒掣係跟住檔案清單動態生成嘅，唔會跟住之後嘅語言切換自動重繪
-    // （唔似其他靜態 HTML 入面嘅 data-i18n 元素，一開波已經喺 document 度俾
-    // i18n.mjs 嘅 apply() 揀中）。淨係喺呢度用 t() 現砌一次文字，只夠俾
-    // *呢一刻* 嘅語言啱——用戶之後切語言，呢粒掣會同其他成頁嘢一齊變晒
-    // 新語言，但佢會獨留喺舊字，好突兀（尤其係揀語言之後冇再郁檔案清單，
-    // 成粒掣可以一直卡喺舊語言）。加返 data-i18n 屬性等佢一樣畀 apply()
-    // 揾到：呢粒 li 一 appendChild 落 ul（已經喺 document 入面），下次 lang-
-    // toggle 觸發 apply() 就會揾到呢粒掣，同其他靜態文字一齊被重寫。呢度
-    // 照舊即刻用 t() 填一次係為咗首次 render 唔使等第二次 apply() 先有字。
-    btn.textContent = t('common.remove');
+    // 動態按鈕的 data-i18n-label 讓之後切語言也更新 aria-label／title；
+    // 首次 render 仍立即填字，避免要等下一次 apply() 才有標籤。
+    btn.setAttribute('aria-label', t('common.remove'));
+    btn.title = t('common.remove');
     // 呢個保持原樣：li 每次 render 都係新建嘅，佢個 onClick 閉包住嘅 files/i
     // 本身就一定係「今次呢次 render」嘅資料，冇過時問題，唔使搬去 sortState。
     btn.addEventListener('click', e => {
       e.stopPropagation();
+      const hadFocus = document.activeElement === btn;
       onChange(files.filter((_, j) => j !== i));
+      if (hadFocus) ul.children[Math.min(i, ul.children.length - 1)]?.querySelector('.remove')?.focus();
     });
     ul.appendChild(li);
   });
@@ -143,13 +165,20 @@ export function renderFileList(ul, files, { sortable = false, onChange = () => {
   sortState.set(ul, state);
 
   ul.addEventListener('dragstart', e => {
-    state.from = Number(e.target.dataset.index);
-    e.target.classList.add('dragging');
+    const li = e.target.closest('li');
+    if (!li || ul.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+    state.from = Number(li.dataset.index);
+    e.dataTransfer?.setData('text/plain', li.dataset.index);
+    li.classList.add('dragging');
   });
-  ul.addEventListener('dragend', e => e.target.classList.remove('dragging'));
+  ul.addEventListener('dragend', e => {
+    e.target.classList.remove('dragging');
+    state.from = null;
+  });
   ul.addEventListener('dragover', e => e.preventDefault());
   ul.addEventListener('drop', e => {
     e.preventDefault();
+    if (ul.getAttribute('aria-disabled') === 'true') return;
     const li = e.target.closest('li');
     if (!li || state.from === null) return;
     const to = Number(li.dataset.index);

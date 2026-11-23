@@ -1,3 +1,5 @@
+import { mountChrome } from './chrome.mjs';
+
 const STORAGE_KEY = 'pdf-toolbox-lang';
 const LOAD_ERROR_ID = 'i18n-load-error';
 // 字典本身載入失敗，冇辦法用 t() 揾字（雞先定蛋先問題），呢句必須寫死雙語。
@@ -12,7 +14,12 @@ function get(obj, path) {
 export function t(key, vars = {}) {
   const raw = get(dict, key);
   if (raw === undefined) return key;
-  return String(raw).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  return String(raw).replace(/\{(\w+)\}/g, (m, k) => {
+    if (!(k in vars)) return m;
+    const value = vars[k];
+    return value && typeof value === 'object' && value.i18nKey
+      ? t(value.i18nKey, value.vars) : String(value);
+  });
 }
 
 export function currentLang() {
@@ -22,7 +29,7 @@ export function currentLang() {
 function apply(root = document) {
   document.getElementById(LOAD_ERROR_ID)?.remove(); // 呢次 load 成功，之前殘留嘅失敗橫幅要撤走
   root.querySelectorAll('[data-i18n]').forEach(el => {
-    el.textContent = t(el.dataset.i18n);
+    el.textContent = t(el.dataset.i18n, el.dataset.i18nVars ? JSON.parse(el.dataset.i18nVars) : {});
   });
   root.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
@@ -59,7 +66,15 @@ async function load(next) {
   }
 }
 
+let initialization;
 export async function initI18n() {
+  if (initialization) return initialization;
+  mountChrome();
+  initialization = initialize();
+  return initialization;
+}
+
+async function initialize() {
   await load(localStorage.getItem(STORAGE_KEY) || 'zh');
   const btn = document.getElementById('lang-toggle');
   if (btn) {

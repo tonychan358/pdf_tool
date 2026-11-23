@@ -8,36 +8,38 @@
 <script src="../vendor/jszip.min.js"></script>
 </head>
 <body data-title-key="organize.title">
-<div class="wrap">
-  <header class="site">
-    <h1 data-i18n="organize.title"></h1>
-    <div>
-      <a href="../index.html" data-i18n="app.backToHub"></a>
-      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
-    </div>
-  </header>
-  <p class="privacy" data-i18n="app.privacy"></p>
-
-  <div class="card">
-    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
-    <ul id="filelist" class="filelist"></ul>
-    <p class="hint" data-i18n="organize.hint"></p>
-    <div id="thumbs" class="thumbs"></div>
-    <p id="kept" class="hint"></p>
-
-    <label data-i18n="organize.outName"></label>
-    <input type="text" id="outName">
-
-    <button id="run" class="primary" data-i18n="common.run"></button>
-    <div id="msg" class="msg" hidden></div>
-  </div>
+<div data-wizard>
+  <ol class="stepper" data-stepper data-i18n-label="wizard.steps">
+    <li class="step active" data-step-number="1" aria-current="step"><span class="num">1</span><span data-i18n="wizard.upload"></span></li>
+    <li class="step" data-step-number="2"><span class="num">2</span><span data-i18n="organize.stepName"></span></li>
+    <li class="step" data-step-number="3"><span class="num">3</span><span data-i18n="wizard.download"></span></li>
+  </ol>
+  <main class="wrap workspace">
+    <section data-step="1" class="upload-panel" aria-labelledby="upload-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="organize.title"></p><h1 id="upload-title" tabindex="-1" data-i18n="wizard.uploadTitle"></h1><p data-i18n="wizard.uploadHint"></p></div></div>
+      <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
+      <div data-file-list-slot="1"></div>
+      <div class="action-bar"><button type="button" class="btn" data-wizard-action="adjust" data-continue hidden data-i18n="wizard.continue"></button></div>
+    </section>
+    <section data-step="2" hidden aria-labelledby="settings-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="organize.title"></p><h1 id="settings-title" tabindex="-1" data-i18n="organize.heading"></h1><p data-i18n="organize.intro"></p></div><span class="step-counter" data-i18n="wizard.stepCount" data-i18n-vars='{"n":2}'></span></div>
+      <div class="workspace-grid wide-workspace"><div>
+        <div data-file-list-slot="2"><ul id="filelist" class="filelist"></ul></div>
+        <p class="hint" data-i18n="organize.hint"></p><div id="thumbs" class="thumbs"></div>
+      </div><aside data-i18n-label="organize.summaryTitle"><div class="side-panel"><h3 data-i18n="organize.summaryTitle"></h3><div class="summary-item"><span data-i18n="wizard.summaryPages"></span><strong id="sourcePages">0</strong></div><div class="summary-item"><span data-i18n="wizard.summaryKept"></span><strong id="kept"></strong></div><div class="summary-item"><span data-i18n="wizard.summaryOutputs"></span><strong data-i18n="wizard.singleOutput"></strong></div></div></aside></div>
+      <div class="action-bar"><button type="button" class="back-link" data-wizard-action="upload"><span aria-hidden="true">&#8592;</span><span data-i18n="wizard.backUpload"></span></button><button type="button" id="run" class="btn" disabled><span data-i18n="organize.run"></span><span aria-hidden="true">&#8594;</span></button></div>
+    </section>
+    <section data-step="3" hidden aria-label="PDF"><div data-completion></div><div class="complete-actions"><button type="button" class="back-link" data-wizard-action="adjust"><span aria-hidden="true">&#8592;</span><span data-i18n="wizard.backAdjust"></span></button><button type="button" class="text-btn" data-wizard-action="restart" data-i18n="organize.restart"></button></div></section>
+    <div id="msg" class="msg" role="status" aria-live="polite" hidden></div>
+  </main>
 </div>
-
 <script type="module">
 import { initI18n, t } from '../assets/core/i18n.mjs';
 import { createDropzone, renderFileList } from '../assets/core/dropzone.mjs';
 import { loadPdf, newPdf, save, PDFLib, AppError } from '../assets/core/pdf.mjs';
-import { deliver } from '../assets/core/zip.mjs';
+import { mountWizardShell } from '../assets/core/toolpage.mjs';
+import { receiveHandoff } from '../assets/core/handoff.mjs';
+import { createInputGuard, createControlLock } from '../assets/core/wizard-state.mjs';
 import { renderThumbs } from '../assets/core/thumbs.mjs';
 import { sanitizeFileName } from '../assets/core/naming.mjs';
 
@@ -45,23 +47,30 @@ const $ = id => document.getElementById(id);
 const msgEl = $('msg');
 const show = (cls, key, vars) => {
   msgEl.className = `msg ${cls}`;
+  msgEl.dataset.i18n = key;
+  msgEl.dataset.i18nVars = JSON.stringify(vars || {});
   msgEl.textContent = t(key, vars);
   msgEl.hidden = false;
 };
 const clearMsg = () => { msgEl.hidden = true; };
+let shell;
+let running = false;
 
 await initI18n();
 
 let srcDoc = null;
 let state = [];   // [{origIndex, rotate, removed, canvas}]
 
+let repaintPending = false;
 function repaint() {
+  if (running || shell?.busy || inputGuard.locked) { repaintPending = true; return; }
+  repaintPending = false;
   const box = $('thumbs');
   box.innerHTML = '';
   state.forEach((s, i) => {
     const div = document.createElement('div');
     div.className = 'thumb' + (s.removed ? ' removed' : '');
-    div.draggable = true;
+    div.draggable = !running && !shell?.busy;
     div.dataset.index = String(i);
 
     const no = document.createElement('span');
@@ -89,15 +98,45 @@ function repaint() {
     const acts = document.createElement('div');
     acts.className = 'acts';
     const rot = document.createElement('button');
-    rot.type = 'button'; rot.textContent = '↻'; rot.title = t('organize.rotate');
-    rot.addEventListener('click', e => { e.stopPropagation(); s.rotate = (s.rotate + 90) % 360; repaint(); });
+    rot.type = 'button'; rot.textContent = '↻'; rot.title = t('organize.rotate'); rot.setAttribute('aria-label', rot.title); rot.disabled = running || !!shell?.busy;
+    rot.addEventListener('click', e => { e.stopPropagation(); if (running || shell?.busy || inputGuard.locked) return; s.rotate = (s.rotate + 90) % 360; repaint(); });
     const del = document.createElement('button');
-    del.type = 'button'; del.textContent = s.removed ? '↺' : '✕'; del.title = t('organize.toggleDelete');
-    del.addEventListener('click', e => { e.stopPropagation(); s.removed = !s.removed; repaint(); });
-    acts.append(rot, del);
+    del.type = 'button'; del.textContent = s.removed ? '↺' : '✕'; del.title = t('organize.toggleDelete'); del.setAttribute('aria-label', del.title); del.disabled = running || !!shell?.busy;
+    del.addEventListener('click', e => { e.stopPropagation(); if (running || shell?.busy || inputGuard.locked) return; s.removed = !s.removed; repaint(); });
+    const up = document.createElement('button');
+    const down = document.createElement('button');
+    [up, down].forEach((button, direction) => {
+      const to = i + (direction ? 1 : -1);
+      button.type = 'button'; button.textContent = direction ? '\u25bc' : '\u25b2';
+      button.title = t(direction ? 'common.moveDown' : 'common.moveUp');
+      button.setAttribute('aria-label', button.title);
+      button.disabled = running || !!shell?.busy || to < 0 || to >= state.length;
+      button.addEventListener('click', () => {
+        if (running || shell?.busy || inputGuard.locked) return;
+        state.splice(to, 0, state.splice(i, 1)[0]);
+        repaint();
+        const buttons = $('thumbs').children[to]?.querySelectorAll('button');
+        const preferred = buttons?.[direction];
+        (preferred && !preferred.disabled ? preferred : [...(buttons || [])].find(b => !b.disabled))?.focus();
+      });
+    });
+    acts.append(up, down, rot, del);
 
     div.append(no, s.canvas, acts);
     box.appendChild(div);
+  });
+  translateThumbs();
+  $('sourcePages').textContent = String(state.length);
+}
+
+// 切語言只更新文字，不重建按鈕，讓處理鎖可還原同一批控制的 disabled 快照。
+function translateThumbs() {
+  const keys = ['common.moveUp', 'common.moveDown', 'organize.rotate', 'organize.toggleDelete'];
+  $('thumbs').querySelectorAll('.acts').forEach(acts => {
+    [...acts.children].forEach((button, i) => {
+      button.title = t(keys[i]);
+      button.setAttribute('aria-label', button.title);
+    });
   });
   $('kept').textContent = state.length === 0 ? '' : t('organize.kept', { n: state.filter(s => !s.removed).length });
 }
@@ -105,6 +144,7 @@ function repaint() {
 let dragFrom = null;
 $('thumbs').addEventListener('dragstart', e => {
   const d = e.target.closest('.thumb');
+  if (running || shell?.busy || inputGuard.locked) { e.preventDefault(); return; }
   if (!d) return;
   dragFrom = Number(d.dataset.index);
   d.classList.add('dragging');
@@ -114,7 +154,7 @@ $('thumbs').addEventListener('dragover', e => e.preventDefault());
 $('thumbs').addEventListener('drop', e => {
   e.preventDefault();
   const d = e.target.closest('.thumb');
-  if (!d || dragFrom === null) return;
+  if (running || shell?.busy || inputGuard.locked || !d || dragFrom === null) return;
   const to = Number(d.dataset.index);
   state.splice(to, 0, state.splice(dragFrom, 1)[0]);
   dragFrom = null;
@@ -132,6 +172,7 @@ function resetThumbState() {
   state = [];
   srcDoc = null;
   $('kept').textContent = '';
+  $('sourcePages').textContent = '0';
 }
 
 // 「目前選咗邊個檔」嘅唯一事實來源，同 split.html 的 applyFiles 同一個角色：
@@ -147,9 +188,14 @@ function resetThumbState() {
 const runBtn = $('run');
 runBtn.disabled = true;
 
-async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
+async function applyFiles(files, skipped = { type: 0, limit: 0 }, lease) {
+  if (running || shell?.busy || !inputGuard.allows(lease)) return false;
+  if (lease === undefined) inputGuard.invalidate();
   const myGeneration = ++loadGeneration; // 一定要喺任何 await 之前、同步咁攞
-  renderFileList($('filelist'), files, { onChange: f => { dz.setFiles(f); applyFiles(f); } });
+  dz.setFiles(files);
+  shell?.reset();
+  shell?.setStep('files');
+  renderFileList($('filelist'), files, { onChange: f => { if (running || shell?.busy || inputGuard.locked) return; dz.setFiles(f); applyFiles(f); } });
   if (skipped.limit > 0 && files.length > 0) {
     // 呢個工具都係單檔模式（accept multiple: false），超出上限嘅檔案一定係
     // 一次過拖咗多過一個入嚟，話俾用戶知邊個先係真正被揀嗰個。
@@ -164,21 +210,21 @@ async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
   if (files.length === 0) return;
   try {
     const loaded = await loadPdf(files[0]);
-    if (myGeneration !== loadGeneration) return; // 呢輪讀取已被取代
+    if (myGeneration !== loadGeneration || (lease !== undefined && !inputGuard.allows(lease))) return; // 呢輪讀取已被取代
     const pending = [];
     await renderThumbs(
       files[0],
       (i, canvas) => pending.push({ origIndex: i, rotate: 0, removed: false, canvas }),
       (done, total) => { if (myGeneration === loadGeneration) show('ok', 'organize.rendering', { done, total }); }
     );
-    if (myGeneration !== loadGeneration) return; // 渲染中途已被取代，pending 呢份縮圖唔再寫入任何共用狀態
+    if (myGeneration !== loadGeneration || (lease !== undefined && !inputGuard.allows(lease))) return; // 渲染中途已被取代，pending 呢份縮圖唔再寫入任何共用狀態
     srcDoc = loaded;
     state = pending;
     clearMsg();
     repaint();
-    runBtn.disabled = false; // 縮圖真係整齊晒，先至畀「開始處理」可以撳
+    updateLocks(); // 縮圖真係整齊晒，先至畀「開始處理」可以撳
   } catch (e) {
-    if (myGeneration !== loadGeneration) return; // 同上：遲到嘅 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
+    if (myGeneration !== loadGeneration || (lease !== undefined && !inputGuard.allows(lease))) return; // 同上：遲到嘅 reject 都係舊一輪，唔好報一個關於「用戶已經睇唔到嘅檔案」嘅錯
     resetThumbState();
     show('error', e instanceof AppError ? e.i18nKey : 'error.corrupt');
   }
@@ -187,6 +233,7 @@ async function applyFiles(files, skipped = { type: 0, limit: 0 }) {
 const dz = createDropzone($('drop'), {
   accept: 'pdf', multiple: false,
   onChange: (files, errKey, skipped) => {
+    if (running || shell?.busy || inputGuard.locked) return;
     // 呢個檔案完全冇被接納（例如拖入嘅唔係 PDF），現有已載入文件冇改變，
     // 唔經 applyFiles，淨係報錯——同 split.html 一致。
     if (errKey) { show('error', errKey); return; }
@@ -194,28 +241,18 @@ const dz = createDropzone($('drop'), {
   },
 });
 
-// 預設檔名跟返介面語言，同 merge.html 一致：初次載入用 initI18n() 揀好嘅語言；
-// 之後用戶撳 lang-toggle 切換語言即時跟住換一次；但一旦用戶自己打過檔名，
-// 就唔可以再蓋走佢哋打緊/打好嘅嘢。
-let outNameTouched = false;
-const outNameEl = $('outName');
-outNameEl.addEventListener('input', () => { outNameTouched = true; });
-const applyDefaultOutName = () => {
-  if (!outNameTouched) outNameEl.value = `${t('organize.outNameDefault')}.pdf`;
-};
-applyDefaultOutName();
-// 語言切換同一時間仲要重繪縮圖格：「將輸出 N 頁」嗰句、以及每粒 ↻／✕ 按鈕嘅
-// title 提示，都係喺 repaint() 入面用 t() 現砌，唔會跟住 <html lang> 自動更新。
-// 冇呢步嘅話，用戶切去英文介面後，輸出檔名同標題都變晒英文，但已經有縮圖嘅
-// 頁面卻仲卡住舊語言，畫面會不倫不類。
-new MutationObserver(() => { applyDefaultOutName(); repaint(); })
+new MutationObserver(translateThumbs)
   .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 
 $('run').addEventListener('click', async () => {
+  if (running || shell?.busy || inputGuard.locked) return;
   if (!srcDoc) { show('error', 'error.noFile'); return; }
   const kept = state.filter(s => !s.removed);
   if (kept.length === 0) { show('error', 'organize.allDeleted'); return; }
   const btn = $('run');
+  running = true;
+  inputGuard.invalidate();
+  updateLocks();
   btn.disabled = true;
   try {
     const out = await newPdf();
@@ -228,16 +265,44 @@ $('run').addEventListener('click', async () => {
       }
       out.addPage(pg);
     });
-    const raw = outNameEl.value.trim() || t('organize.outNameDefault');
+    const raw = t('organize.outNameDefault');
     const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
-    await deliver([{ name: `${base}.pdf`, bytes: await save(out) }], 'organized.zip');
-    show('ok', 'common.done');
+    clearMsg();
+    shell.setOutputs([{ name: `${base}.pdf`, bytes: await save(out), pages: out.getPageCount() }]);
+    shell.setStep('complete');
   } catch (e) {
     show('error', e instanceof AppError ? e.i18nKey : 'error.generic', { message: String(e.message) });
   } finally {
-    btn.disabled = false;
+    running = false;
+    updateLocks();
   }
 });
+
+function updateLocks() {
+  const locked = running || !!shell?.busy || inputGuard.locked;
+  dz.setEnabled(!locked);
+  runBtn.disabled = locked || !srcDoc;
+  $('filelist').setAttribute('aria-disabled', String(locked));
+  $('filelist').querySelectorAll('button').forEach(b => { b.disabled = locked; });
+  $('thumbs').querySelectorAll('.thumb').forEach(div => { div.draggable = !locked; });
+  thumbLock.update($('thumbs').querySelectorAll('button'), locked);
+  if (!locked && repaintPending) repaint();
+  shell?.updateLocks(locked);
+}
+const inputGuard = createInputGuard(updateLocks);
+const thumbLock = createControlLock();
+shell = mountWizardShell({
+  root: document.querySelector('[data-wizard]'), listEl: $('filelist'),
+  options: { currentTool: 'organize', step2Key: 'organize.stepName', completeTitleKey: 'organize.readyTitle', defaultNameKey: 'organize.outNameDefault' },
+  getFileCount: () => dz.files.length,
+  onBusy: updateLocks,
+  onAction(action) {
+    if (action === 'add') dz.open();
+    if (action === 'restart') { clearMsg(); dz.clear(); }
+  },
+});
+updateLocks();
+await receiveHandoff({ targetTool: 'organize', inputGuard, onFile: (file, lease) => applyFiles([file], undefined, lease), onError: (key, vars) => show('error', key, vars), onLoaded: name => { if (srcDoc) show('ok', 'handoff.loaded', { name }); } });
 </script>
 </body>
 </html>

@@ -3,81 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#164b40">
 <title>合併 — PDF 工具箱</title>
 <link rel="stylesheet" href="../assets/css/design.css">
 <script src="../vendor/jszip.min.js"></script>
 </head>
 <body data-title-key="merge.title">
-<div class="wrap">
-  <header class="site">
-    <h1 data-i18n="merge.title"></h1>
-    <div>
-      <a href="../index.html" data-i18n="app.backToHub"></a>
-      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
-    </div>
-  </header>
-  <p class="privacy" data-i18n="app.privacy"></p>
-
-  <div class="card">
-    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
-    <p class="hint" data-i18n="merge.hint"></p>
-    <ul id="filelist" class="filelist"></ul>
-
-    <label data-i18n="merge.outName"></label>
-    <input type="text" id="outName">
-
-    <button id="run" class="primary" data-i18n="merge.run"></button>
-    <div id="msg" class="msg" hidden></div>
-  </div>
-
-  <div class="card result" id="result" hidden>
-    <h2 data-i18n="merge.resultTitle"></h2>
-    <p class="big" id="resultSize"></p>
-    <label class="check"><input type="checkbox" id="wantCompress"> <span data-i18n="merge.compress"></span></label>
-    <div id="compressOpts" hidden>
-      <select id="level">
-        <option value="2,0.75" data-i18n="merge.levelLight"></option>
-        <option value="1.5,0.6" data-i18n="merge.levelStandard" selected></option>
-        <option value="1,0.45" data-i18n="merge.levelStrong"></option>
-      </select>
-      <p class="hint" data-i18n="merge.compressNote"></p>
-    </div>
-    <button id="download" class="primary" data-i18n="merge.download"></button>
-    <div id="dlMsg" class="msg" hidden></div>
-  </div>
+<div data-wizard>
+  <ol class="stepper" data-stepper data-i18n-label="wizard.steps">
+    <li class="step active" data-step-number="1" aria-current="step"><span class="num">1</span><span data-i18n="wizard.upload"></span></li>
+    <li class="step" data-step-number="2"><span class="num">2</span><span data-i18n="merge.stepName"></span></li>
+    <li class="step" data-step-number="3"><span class="num">3</span><span data-i18n="wizard.download"></span></li>
+  </ol>
+  <main class="wrap workspace">
+    <section data-step="1" class="upload-panel" aria-labelledby="upload-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="hub.merge"></p>
+        <h1 id="upload-title" tabindex="-1" data-i18n="wizard.uploadTitle"></h1><p data-i18n="wizard.uploadHint"></p></div></div>
+      <div id="drop" class="dropzone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17V3m-5 5 5-5 5 5M4 15v6h16v-6"/></svg><span data-i18n="common.dropPdf"></span></div>
+      <div data-file-list-slot="1"></div>
+      <div class="action-bar"><button type="button" class="btn" data-wizard-action="adjust" data-continue hidden data-i18n="wizard.continue"></button></div>
+    </section>
+    <section data-step="2" hidden aria-labelledby="sort-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="hub.merge"></p>
+        <h1 id="sort-title" tabindex="-1" data-i18n="merge.heading"></h1><p data-i18n="merge.intro"></p></div><span class="step-counter" data-i18n="wizard.stepCount" data-i18n-vars='{"n":2}'></span></div>
+      <div class="workspace-grid">
+        <div><div class="files-toolbar"><div><strong id="file-count"></strong><span> · <span id="file-total"></span></span></div><button type="button" class="text-btn" data-wizard-action="add"><span aria-hidden="true">＋</span><span data-i18n="wizard.addMore"></span></button></div>
+          <div data-file-list-slot="2"><ul id="filelist" class="filelist"></ul></div>
+          <p class="list-hint" data-i18n="merge.hint"></p></div>
+        <aside data-i18n-label="merge.summaryTitle"><div class="side-panel">
+          <h3 data-i18n="merge.summaryTitle"></h3>
+          <div class="summary-item"><span data-i18n="merge.summaryCountLabel"></span><strong id="summary-count"></strong></div>
+          <div class="summary-item"><span data-i18n="merge.summaryPages"></span><strong id="summary-pages" aria-live="polite"></strong></div>
+          <div class="summary-item"><span data-i18n="merge.summarySize"></span><strong id="summary-size"></strong></div>
+          <div class="divider"></div><div class="flow-mini" aria-hidden="true"><span class="mini-sheet">1</span><span class="mini-sheet">2</span><span class="mini-sheet">3</span><svg viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></svg><span class="mini-sheet mini-stack">PDF</span></div>
+          <p class="explain" data-i18n="merge.summaryHint"></p></div>
+          <div class="callout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span data-i18n="merge.localHint"></span></div></aside>
+      </div>
+      <div class="action-bar"><button type="button" class="back-link" data-wizard-action="upload"><span aria-hidden="true">←</span><span data-i18n="wizard.backUpload"></span></button>
+        <div><button type="button" id="run" class="btn" disabled><span data-i18n="merge.run"></span><span aria-hidden="true">→</span></button><p class="action-caption" data-i18n="merge.nextCaption"></p></div></div>
+    </section>
+    <section data-step="3" hidden aria-label="PDF">
+      <div data-completion></div>
+      <div class="complete-actions"><button type="button" class="back-link" data-wizard-action="adjust"><span aria-hidden="true">←</span><span data-i18n="wizard.backAdjust"></span></button>
+        <button type="button" class="text-btn" data-wizard-action="restart" data-i18n="merge.restart"></button></div>
+    </section>
+    <div id="msg" class="msg" role="status" aria-live="polite" hidden></div>
+  </main>
 </div>
-
 <script type="module">
 import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
 import { loadPdf, newPdf, copyRange, save, AppError } from '../assets/core/pdf.mjs';
 import { sanitizeFileName, formatSize } from '../assets/core/naming.mjs';
-import { compressPdf } from '../assets/core/thumbs.mjs';
+import { getPageCount, summarizeFiles } from '../assets/core/filemeta.mjs';
 import { t } from '../assets/core/i18n.mjs';
 
-const outNameEl = document.getElementById('outName');
 const $ = id => document.getElementById(id);
-let merged = null;      // { name, bytes, pages }
-let compressed = null;  // { key, bytes } —— 同一級別唔使重壓
-const dlMsg = (cls, key, vars) => { $('dlMsg').className = `msg ${cls}`; $('dlMsg').textContent = t(key, vars); $('dlMsg').hidden = false; };
-const showResult = () => {
-  $('resultSize').textContent = t('merge.resultSize', { size: formatSize(merged.bytes.length), n: merged.pages });
-  $('result').hidden = false;
+let selectedFiles = [], summaryGeneration = 0;
+const localized = (id, key, vars = {}) => {
+  const el = $(id);
+  el.dataset.i18n = key;
+  el.dataset.i18nVars = JSON.stringify(vars);
+  el.textContent = t(key, vars);
 };
+function updateSummary(files) {
+  selectedFiles = files;
+  const generation = ++summaryGeneration;
+  const summary = summarizeFiles(files, []);
+  localized('file-count', 'wizard.fileCount', { n: summary.count });
+  localized('summary-count', 'merge.summaryCount', { n: summary.count });
+  $('file-total').textContent = $('summary-size').textContent = formatSize(summary.bytes);
+  localized('summary-pages', files.length ? 'wizard.pagesPending' : 'wizard.pages', { n: 0 });
+  Promise.all(files.map(getPageCount)).then(counts => {
+    // 舊清單的非同步頁數不能寫回使用者已更改的選擇。
+    if (generation !== summaryGeneration) return;
+    const { pages } = summarizeFiles(files, counts);
+    localized('summary-pages', pages === null ? 'wizard.pagesUnknown' : 'wizard.pages', { n: pages });
+  });
+}
 
 await mountTool({
-  dropEl: document.getElementById('drop'),
-  listEl: document.getElementById('filelist'),
-  runBtn: document.getElementById('run'),
-  msgEl:  document.getElementById('msg'),
+  dropEl: $('drop'), listEl: $('filelist'), runBtn: $('run'), msgEl: $('msg'),
   accept: 'pdf', multiple: true, sortable: true,
-  // 次序／檔案一改，之前合併好嘅結果就唔再代表畫面上嘅清單，要收起
-  onFilesChange: () => { merged = compressed = null; $('result').hidden = true; $('dlMsg').hidden = true; },
-  async onResult([out]) {
-    merged = out;
-    compressed = null;
-    $('dlMsg').hidden = true;
-    showResult();
-    $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  onFilesChange: updateSummary,
+  wizard: {
+    step2Key: 'merge.stepName', completeTitleKey: 'merge.readyTitle', resultLabelKey: 'merge.resultLabel',
+    defaultNameKey: 'merge.outNameDefault',
+    completeSummary: () => ({ key: 'merge.readySummary', vars: { n: selectedFiles.length } }),
   },
   async run(files, ctx) {
     const out = await newPdf();
@@ -92,75 +103,17 @@ await mountTool({
         const src = await loadPdf(files[i]);
         await copyRange(src, out, 1, src.getPageCount());
       } catch (e) {
-        const reason = e instanceof AppError ? t(e.i18nKey, e.vars) : String(e && e.message || e);
+        const reason = e instanceof AppError ? { i18nKey: e.i18nKey, vars: e.vars } : String(e && e.message || e);
         throw new AppError('error.mergeFileFailed', { name: files[i].name, reason });
       }
       ctx.progress(i + 1, files.length);
       await yieldToUI(); // 逐檔就俾瀏覽器 repaint 一次，進度條先會逐步畫得出（唔係一路凍結到尾先跳去 done）
     }
-    const raw = outNameEl.value.trim() || t('merge.outNameDefault');
+    const raw = t('merge.outNameDefault');
     const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
     return [{ name: `${base}.pdf`, bytes: await save(out), pages: out.getPageCount() }];
   },
 });
-
-$('wantCompress').addEventListener('change', () => { $('compressOpts').hidden = !$('wantCompress').checked; });
-
-function download(bytes, name) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
-
-$('download').addEventListener('click', async () => {
-  if (!merged) { dlMsg('error', 'merge.stale'); return; }
-  if (!$('wantCompress').checked) { download(merged.bytes, merged.name); dlMsg('ok', 'common.done'); return; }
-  const key = $('level').value;
-  const btns = [$('download'), $('run'), $('level'), $('wantCompress')];
-  btns.forEach(b => { b.disabled = true; });
-  try {
-    if (compressed?.key !== key) {
-      const [scale, quality] = key.split(',').map(Number);
-      const bytes = await compressPdf(merged.bytes, { scale, quality }, (done, total) => dlMsg('ok', 'merge.compressing', { done, total }));
-      compressed = { key, bytes };
-    }
-    const c = compressed.bytes;
-    if (c.length >= merged.bytes.length) {
-      download(merged.bytes, merged.name);
-      dlMsg('warn', 'merge.compressedBigger', { size: formatSize(c.length) });
-    } else {
-      download(c, merged.name.replace(/\.pdf$/i, '_compressed.pdf'));
-      dlMsg('ok', 'merge.compressedOk', { size: formatSize(c.length), pct: Math.round((1 - c.length / merged.bytes.length) * 100) });
-    }
-  } catch (e) {
-    dlMsg('error', 'merge.compressFailed', { message: String(e && e.message || e) });
-  } finally {
-    btns.forEach(b => { b.disabled = false; });
-  }
-});
-
-// 語言切換後重寫結果大小句子（佢係動態砌出嚟，apply() 唔會自動更新）
-new MutationObserver(() => { if (merged) showResult(); })
-  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
-
-// 預設檔名要跟返介面語言：初次載入用返 mountTool() 入面 initI18n() 揀好嘅
-// 語言；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一次——否則「頁面一
-// 開就切去英文先至開始用」嘅使用者，會見到英文介面卻配一個中文預設檔名
-// 「合併結果.pdf」，同其餘所有文字唔一致。但一旦用戶自己打過檔名，呢個
-// 自動同步就要停手，唔可以蓋走佢哋打緊/打好嘅嘢——用 outNameTouched 記住
-// 「用戶有冇手動改過」。
-// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
-// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
-// 仲未 fetch 完，會讀到舊語言）。
-let outNameTouched = false;
-outNameEl.addEventListener('input', () => { outNameTouched = true; });
-const applyDefaultOutName = () => {
-  if (!outNameTouched) outNameEl.value = `${t('merge.outNameDefault')}.pdf`;
-};
-applyDefaultOutName();
-new MutationObserver(applyDefaultOutName)
-  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 </script>
 </body>
 </html>

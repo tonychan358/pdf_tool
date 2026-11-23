@@ -8,20 +8,27 @@
 <script src="../vendor/jszip.min.js"></script>
 </head>
 <body data-title-key="nup.title">
-<div class="wrap">
-  <header class="site">
-    <h1 data-i18n="nup.title"></h1>
-    <div>
-      <a href="../index.html" data-i18n="app.backToHub"></a>
-      <button id="lang-toggle" class="secondary" style="margin:0 0 0 1rem;padding:.4rem .8rem" data-i18n="app.langToggle"></button>
-    </div>
-  </header>
-  <p class="privacy" data-i18n="app.privacy"></p>
+<div data-wizard>
+  <ol class="stepper" data-stepper data-i18n-label="wizard.steps">
+    <li class="step active" data-step-number="1" aria-current="step"><span class="num">1</span><span data-i18n="wizard.upload"></span></li>
+    <li class="step" data-step-number="2"><span class="num">2</span><span data-i18n="nup.stepName"></span></li>
+    <li class="step" data-step-number="3"><span class="num">3</span><span data-i18n="wizard.download"></span></li>
+  </ol>
+  <main class="wrap workspace">
+    <section data-step="1" class="upload-panel" aria-labelledby="upload-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="nup.title"></p><h1 id="upload-title" tabindex="-1" data-i18n="wizard.uploadTitle"></h1><p data-i18n="wizard.uploadHint"></p></div></div>
+      <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
 
-  <div class="card">
-    <div id="drop" class="dropzone" data-i18n="common.dropPdf"></div>
-    <ul id="filelist" class="filelist"></ul>
-
+      <div data-file-list-slot="1"></div>
+      <div class="action-bar"><button type="button" class="btn" data-wizard-action="adjust" data-continue hidden data-i18n="wizard.continue"></button></div>
+    </section>
+    <section data-step="2" hidden aria-labelledby="settings-title">
+      <div class="page-heading"><div><p class="eyebrow" data-i18n="nup.title"></p><h1 id="settings-title" tabindex="-1" data-i18n="nup.heading"></h1><p data-i18n="nup.intro"></p></div><span class="step-counter" data-i18n="wizard.stepCount" data-i18n-vars='{"n":2}'></span></div>
+      <div class="workspace-grid">
+        <div>
+          <div class="files-toolbar"><strong data-i18n="wizard.selectedFiles"></strong><button type="button" class="text-btn" data-wizard-action="upload" data-i18n="wizard.changeFile"></button></div>
+          <div data-file-list-slot="2"><ul id="filelist" class="filelist"></ul></div>
+          <div class="card tool-options">
     <label data-i18n="nup.per"></label>
     <div class="radio-row">
       <label><input type="radio" name="per" value="2" checked><span data-i18n="nup.per2"></span></label>
@@ -29,27 +36,42 @@
     </div>
     <p id="sheetsInfo" class="hint"></p>
 
-    <label data-i18n="nup.gutter"></label>
+    <label for="gutter" data-i18n="nup.gutter"></label>
     <input type="number" id="gutter" value="10" min="0" step="1">
     <p class="hint" data-i18n="nup.gutterHint"></p>
 
-    <label data-i18n="nup.outName"></label>
-    <input type="text" id="outName">
 
-    <button id="run" class="primary" data-i18n="common.run"></button>
-    <div id="msg" class="msg" hidden></div>
-  </div>
+          </div>
+        </div>
+        <aside data-i18n-label="nup.summaryTitle"><div class="side-panel">
+          <h3 data-i18n="nup.summaryTitle"></h3>
+          <div class="summary-item"><span data-i18n="wizard.selectedFiles"></span><strong data-summary-count></strong></div>
+          <div class="summary-item"><span data-i18n="wizard.summaryPages"></span><strong data-summary-pages aria-live="polite"></strong></div>
+          <div class="summary-item"><span data-i18n="wizard.summaryKept"></span><strong data-summary-output-pages aria-live="polite"></strong></div>
+          <div class="summary-item"><span data-i18n="wizard.summarySize"></span><strong data-summary-size></strong></div>
+          <div class="divider"></div><p class="explain" data-i18n="wizard.singleOutputHint"></p>
+        </div></aside>
+      </div>
+      <div class="action-bar"><button type="button" class="back-link" data-wizard-action="upload"><span aria-hidden="true">←</span><span data-i18n="wizard.backUpload"></span></button><button type="button" id="run" class="btn" disabled><span data-i18n="nup.run"></span><span aria-hidden="true">→</span></button></div>
+    </section>
+    <section data-step="3" hidden aria-label="PDF">
+      <div data-completion></div>
+      <div class="complete-actions"><button type="button" class="back-link" data-wizard-action="adjust"><span aria-hidden="true">←</span><span data-i18n="wizard.backAdjust"></span></button><button type="button" class="text-btn" data-wizard-action="restart" data-i18n="nup.restart"></button></div>
+    </section>
+    <div id="msg" class="msg" role="status" aria-live="polite" hidden></div>
+  </main>
 </div>
-
 <script type="module">
 import { mountTool, yieldToUI } from '../assets/core/toolpage.mjs';
 import { loadPdf, newPdf, save } from '../assets/core/pdf.mjs';
 import { nupLayout, A4 } from '../assets/core/paging.mjs';
 import { sanitizeFileName } from '../assets/core/naming.mjs';
 import { t } from '../assets/core/i18n.mjs';
+import { createToolSummary } from '../assets/core/tool-summary.mjs';
+
+const updateSummary = createToolSummary(document.querySelector('[data-wizard]'), { outputPages: n => Math.ceil(n / currentPer()) });
 
 const $ = id => document.getElementById(id);
-const outNameEl = $('outName');
 const sheetsInfoEl = $('sheetsInfo');
 const gutterEl = $('gutter');
 const currentPer = () => Number(document.querySelector('input[name=per]:checked').value);
@@ -65,11 +87,8 @@ const MAX_GUTTER = Math.floor(A4.W / 3) - 1; // = 197pt
 gutterEl.max = String(MAX_GUTTER);
 
 // 用戶打嘅留白一旦超出 MAX_GUTTER，就即時夾返落嚟並彈警告——喺度做（用戶
-// 離開個欄嗰刻，即 change 事件），而唔係擺喺 run() 入面先做：mountTool 嘅
-// click handler 喺 run() 完成、deliver() 完成之後一定會執行
-// ctrl.showOk('common.done')，會將 run() 入面設嘅任何訊息（包括呢個警告）
-// 即刻蓋走，用戶淨係會見到「完成」，唔會見到「其實你打嘅數字已經被夾細
-// 咗」。擺喺呢度、喺撳「開始處理」之前就令用戶睇到，先真正符合「唔可以
+// 離開個欄嗰刻，即 change 事件），而唔係擺喺 run() 入面先做：處理完成後
+// 會切去下載畫面。喺撳「開始處理」之前就令用戶睇到，先真正符合「唔可以
 // 靜靜雞俾佢哋一個唔係佢哋所要求嘅結果」呢個要求。
 function clampGutterInput() {
   const raw = Number(gutterEl.value);
@@ -85,6 +104,8 @@ const ctrl = await mountTool({
   runBtn: $('run'),
   msgEl:  $('msg'),
   accept: 'pdf', multiple: false,
+  onFilesChange: updateSummary,
+  wizard: { currentTool: 'nup', step2Key: 'nup.stepName', completeTitleKey: 'nup.readyTitle', defaultNameKey: 'nup.outNameDefault' },
   async run(files, ctx) {
     const per = currentPer();
     // 撳「開始處理」嗰刻先再夾多一次做保底：正常情況下 clampGutterInput() 已經
@@ -140,7 +161,7 @@ const ctrl = await mountTool({
       await yieldToUI(); // 逐版就俾瀏覽器 repaint 一次，進度條先會逐步畫得出（唔係一路凍結到尾先跳去 done）
     }
 
-    const raw = outNameEl.value.trim() || t('nup.outNameDefault');
+    const raw = t('nup.outNameDefault');
     const base = sanitizeFileName(raw.replace(/\.pdf$/i, ''), t('common.untitled'));
     return [{ name: `${base}.pdf`, bytes: await save(out) }];
   },
@@ -176,26 +197,9 @@ document.querySelectorAll('input[name=per]').forEach(r => r.addEventListener('ch
 // observer 一定收得到。
 new MutationObserver(updateSheetsInfo).observe($('filelist'), { childList: true });
 
-// 預設檔名要跟返介面語言，同 merge.html／images-to-pdf.html／interleave.html／
-// organize.html 用同一套做法：初次載入用 mountTool() 入面 initI18n() 揀好嘅
-// 語言即刻填一次；之後用戶撳 lang-toggle 切換語言，都要即時跟住換一次——
-// 否則介面已經切晒去英文，輸出檔名仍然係中文「拼版結果.pdf」，同其餘所有
-// 文字唔一致。但一旦用戶自己打過檔名，呢個自動同步就要停手，唔可以蓋走
-// 佢哋打緊/打好嘅嘢——用 outNameTouched 記住「用戶有冇手動改過」。
-// apply()（i18n.mjs）每次語言載入完成都會改 <html lang="...">，用嚟做「呢輪
-// 語言切換真係完成咗」嘅訊號，好過喺 click handler 度即刻讀 t()（嗰陣新字典
-// 仲未 fetch 完，會讀到舊語言）。
-let outNameTouched = false;
-outNameEl.addEventListener('input', () => { outNameTouched = true; });
-const applyDefaultOutName = () => {
-  if (!outNameTouched) outNameEl.value = `${t('nup.outNameDefault')}.pdf`;
-};
-applyDefaultOutName();
-// 同一個訊號仲要順手重新畫一次「幾多版」預覽——嗰句係用 t() 現砌嘅純文字，
-// 唔會跟住 <html lang> 自動更新（同 organize.html 嘅 repaint() 一樣道理）。
-// 冇呢步嘅話，用戶已經切咗去英文介面，呢句提示卻仲卡住舊語言，好突兀。
-new MutationObserver(() => { applyDefaultOutName(); updateSheetsInfo(); })
+new MutationObserver(updateSheetsInfo)
   .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+updateSheetsInfo();
 </script>
 </body>
 </html>

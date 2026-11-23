@@ -78,7 +78,8 @@ export async function renderThumbs(file, onPage, onProgress = () => {}) {
 // 壓縮：逐頁 render 做 JPEG，再以原頁面尺寸（已計旋轉）放返入新 PDF。
 // 代價係文字變圖片、揀唔到／搜唔到——呼叫方要話俾用戶知。
 // scale 1 ≈ 72 dpi；quality 係 canvas.toBlob 嘅 JPEG 質素（0–1）。
-export async function compressPdf(bytes, { scale, quality }, onProgress = () => {}) {
+// signal：撤銷時喺下一頁之前停低，finally 照樣 destroy worker，唔會喺背景繼續食記憶體
+export async function compressPdf(bytes, { scale, quality }, onProgress = () => {}, signal) {
   const { PDFDocument } = await import('../../vendor/pdf-lib.esm.min.js');
   // slice：pdf.js 會 transfer 個 buffer 去 worker，唔複製就會令呼叫方手上嗰份變空
   const loadingTask = pdfjs.getDocument({ data: bytes.slice(), cMapUrl: CMAP_URL, cMapPacked: true });
@@ -88,6 +89,7 @@ export async function compressPdf(bytes, { scale, quality }, onProgress = () => 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     for (let i = 1; i <= doc.numPages; i++) {
+      signal?.throwIfAborted();
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 });
       const viewport = page.getViewport({ scale });

@@ -3,45 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#164b40">
 <title>PDF 工具箱</title>
 <link rel="stylesheet" href="assets/css/design.css">
 </head>
 <body>
-<div class="wrap">
-  <header class="site">
-    <h1 data-i18n="app.title">PDF 工具箱</h1>
-    <button id="lang-toggle" class="secondary" style="margin:0;padding:.4rem .8rem" data-i18n="app.langToggle">English</button>
-  </header>
-  <p style="color:var(--text-secondary);margin-top:-.5rem" data-i18n="app.tagline"></p>
-  <p class="privacy" data-i18n="app.privacy"></p>
-
-  <div class="tool-grid">
-    <a class="tool-card" href="tools/split.html">
-      <h2 data-i18n="hub.split"></h2><p data-i18n="hub.splitDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/merge.html">
-      <h2 data-i18n="hub.merge"></h2><p data-i18n="hub.mergeDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/interleave.html">
-      <h2 data-i18n="hub.interleave"></h2><p data-i18n="hub.interleaveDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/images-to-pdf.html">
-      <h2 data-i18n="hub.images"></h2><p data-i18n="hub.imagesDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/organize.html">
-      <h2 data-i18n="hub.organize"></h2><p data-i18n="hub.organizeDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/nup.html">
-      <h2 data-i18n="hub.nup"></h2><p data-i18n="hub.nupDesc"></p>
-    </a>
-    <a class="tool-card" href="tools/margin.html">
-      <h2 data-i18n="hub.margin"></h2><p data-i18n="hub.marginDesc"></p>
-    </a>
+<main class="wrap">
+  <section class="hero" aria-labelledby="home-title">
+    <div><p class="eyebrow" data-i18n="home.eyebrow"></p>
+      <h1 id="home-title"><span data-i18n="home.titleLead"></span><br><em data-i18n="home.titleHighlight"></em></h1>
+      <p data-i18n="home.intro"></p>
+    </div>
+<div class="hero-art" aria-hidden="true"><svg viewBox="0 0 310 230"><path d="m56 38 113-8 13 151-113 8z" fill="#b3cdbb" stroke="#164b40"/><path d="m100 22 108 13-18 150-108-13z" fill="#fffef9" stroke="#164b40"/><path d="m121 53 58 7m-61 9 58 7m-61 9 40 5" stroke="#9dab97"/><path d="m130 90 100-12 17 136-100 12z" fill="#fffef9" stroke="#164b40"/><path d="m148 114 58-7m-56 20 58-7m-56 20 58-7m-56 20 58-7m-56 20 33-4" stroke="#a8b5a1"/><circle cx="230" cy="60" r="28" fill="#164b40" stroke="#164b40"/><path d="m216 60 9 9 18-20" stroke="#f2cf62" stroke-width="3"/><path d="M46 134v19m-9-9h19M256 164v14m-7-7h14M69 15l-5-9m-9 22-10-3" stroke="#164b40"/><path d="m219 200 36-50 9 6-36 50-13 7z" fill="#efaa8d" stroke="#164b40"/><path d="m219 200 9 6m27-56 9 6" stroke="#164b40"/></svg><small data-i18n="home.artNote"></small></div>
+  </section>
+  <div class="home-tools">
+    <section aria-labelledby="group-0"><h2 class="group-title" id="group-0" data-i18n="home.organizeGroup"></h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="tools/split.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><path d="M5 3h14v6H5zM5 15h14v6H5zM2 12h3m3 0h3m3 0h3m3 0h2"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.split"></h3><p data-i18n="hub.splitDesc"></p>
+        </a>
+        <a class="tool-card featured" href="tools/merge.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><path d="M3 3h6v7H3zM15 3h6v7h-6zM6 10v4h12v-4M12 14v7m-3-3 3 3 3-3"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.merge"></h3><p data-i18n="hub.mergeDesc"></p>
+        </a>
+        <a class="tool-card" href="tools/interleave.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><path d="M3 3h6v6H3zM15 3h6v6h-6zM6 9v3l6 3 6-3V9M9 17h6v5H9zM12 15v2"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.interleave"></h3><p data-i18n="hub.interleaveDesc"></p>
+        </a>
+      </div>
+    </section>
+    <section aria-labelledby="group-1"><h2 class="group-title" id="group-1" data-i18n="home.createGroup"></h2>
+      <div class="tool-grid four">
+        <a class="tool-card" href="tools/images-to-pdf.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 5 5"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.images"></h3><p data-i18n="hub.imagesDesc"></p>
+        </a>
+        <a class="tool-card" href="tools/organize.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="m14 21 1-4 5-5 3 3-5 5z"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.organize"></h3><p data-i18n="hub.organizeDesc"></p>
+        </a>
+        <a class="tool-card" href="tools/nup.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><rect x="3" y="2" width="18" height="20" rx="2"/><path d="M12 2v20M3 12h18M7 6v2m10-2v2M7 16v2m10-2v2"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.nup"></h3><p data-i18n="hub.nupDesc"></p>
+        </a>
+        <a class="tool-card" href="tools/margin.html">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><path d="M5 2h14v20H5zM8 6h8M8 9h8M8 12h8M5 16h14"/><path d="M8 19h3"/></svg></span><svg viewBox="0 0 24 24" class="card-arrow" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+          <h3 data-i18n="hub.margin"></h3><p data-i18n="hub.marginDesc"></p>
+        </a>
+      </div>
+    </section>
+    <aside class="privacy-strip"><svg viewBox="0 0 24 24" class="" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6zM8.5 12l2.5 2.5 4.5-5"/></svg>
+      <div><strong data-i18n="home.privacyTitle"></strong><p data-i18n="app.privacy"></p></div>
+      <span class="device-note" data-i18n="home.devices"></span>
+    </aside>
   </div>
-</div>
+</main>
 <script type="module">
-  import { initI18n } from './assets/core/i18n.mjs';
-  initI18n();
+import { initI18n } from './assets/core/i18n.mjs';
+await initI18n();
 </script>
 </body>
 </html>

@@ -74,3 +74,12 @@ v1 完成：七個工具全部可用，本機 port 8010。純靜態、零後端�
   - [x] 驗證：`npm test` 76 條全綠；Playwright 桌面＋手機寬度端對端（排序、合併、原檔下載、壓縮 18.6 MB→248 KB、壓縮變大退回原檔、移除後收起結果、英文切換）、images-to-pdf 回歸
   - [x] 上載到 `tonychan358/pdf_tool`（保留 CNAME `pdftools.g14techforlife.com`）
   - [ ] 全站換新風格（先出 3–4 款 mockup 俾 SIR 揀）
+
+- 2026-11-23 — **全站換「逐步精靈」風格**（SIR 揀 mockup 第 5 款；計劃 `docs/plans/2026-11-23-wizard-redesign.md`）
+  - [x] 8 款 mockup（agy×5、Codex×3）＋比較頁：`docs/mockups/2026-11-22_全站新風格/`
+  - [x] 第一批（Task 1–4，Codex 實作）：新設計系統＋`DESIGN.md`、共用頂欄／頁尾 `chrome.mjs`、首頁、精靈外殼（步驟條、檔案行頁數、共用完成畫面、預先壓縮、改檔名）、合併頁。報告 `docs/reports/2026-11-23-wiz1-codex-report.md`
+  - [x] Codex review #1：0 Critical／1 Important／2 Minor，全部核實並修正（壓縮可取消、較大結果唔留 bytes），見 `docs/reviews/2026-11-23-codex-review-wizard-1.md`
+  - [x] SIR 試用合併頁樣板（本機 http://localhost:8010/），批准推展至部署
+  - [x] 第二批（Task 5–7，Codex 實作）：其餘 6 個工具套精靈外殼、IndexedDB 接力（單次使用、1 小時過期）、i18n。報告 `docs/reports/2026-11-23-wiz2-codex-report.md`
+  - [x] Codex review #2：0 Critical／2 Important／3 Minor，全部核實並交 Codex 修正（接力讀取持輸入鎖＋世代檢查、處理中鎖第二步設定、手機單檔行、拆分 legend、唯一標記 fixture 驗頁序），見 `docs/reviews/2026-11-23-codex-review-wizard-2.md`；`npm test` 99/99、瀏覽器斷言 298 項
+  - [ ] 部署到 `tonychan358/pdf_tool`（排除 `docs/mockups`、`docs/verification`）
